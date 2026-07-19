@@ -1,0 +1,233 @@
+name: CD - Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cloud-run-production
+  cancel-in-progress: true
+
+env:
+  GCP_PROJECT_ID: mygram-suitmedia-figo-2026
+  GCP_REGION: asia-southeast2
+  ARTIFACT_REGISTRY_HOST: asia-southeast2-docker.pkg.dev
+  ARTIFACT_REGISTRY_REPOSITORY: asia-southeast2-docker.pkg.dev/mygram-suitmedia-figo-2026/mygram-containers
+  BACKEND_SERVICE: mygram-api
+  FRONTEND_SERVICE: mygram-web
+  WORKLOAD_IDENTITY_PROVIDER: projects/734925981385/locations/global/workloadIdentityPools/github-actions-pool/providers/github
+  DEPLOYMENT_SERVICE_ACCOUNT: github-mygram-deployer@mygram-suitmedia-figo-2026.iam.gserviceaccount.com
+  RUNTIME_SERVICE_ACCOUNT: mygram-runtime@mygram-suitmedia-figo-2026.iam.gserviceaccount.com
+  CLOUD_SQL_CONNECTION: mygram-suitmedia-figo-2026:asia-southeast2:mygram-postgres
+  DB_NAME: mygram
+  DB_USER: mygramapp
+
+jobs:
+  deploy:
+    name: deploy-cloud-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to Google Cloud with Workload Identity Federation
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYMENT_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Validate required Garage GitHub variables
+        shell: bash
+        env:
+          GARAGE_S3_ENDPOINT: ${{ vars.GARAGE_S3_ENDPOINT }}
+          GARAGE_S3_REGION: ${{ vars.GARAGE_S3_REGION }}
+          GARAGE_S3_BUCKET: ${{ vars.GARAGE_S3_BUCKET }}
+        run: |
+          for variable_name in GARAGE_S3_ENDPOINT GARAGE_S3_REGION GARAGE_S3_BUCKET; do
+            if [[ -z "${!variable_name}" ]]; then
+              echo "Missing required GitHub Actions variable: ${variable_name}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure Docker authentication for Artifact Registry
+        run: gcloud auth configure-docker "${ARTIFACT_REGISTRY_HOST}" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/mygram-api:${{ github.sha }}
+          cache-from: type=gha,scope=backend-production
+          cache-to: type=gha,scope=backend-production,mode=max
+
+      - name: Determine initial API CORS origin
+        id: initial-cors
+        shell: bash
+        run: |
+          frontend_url="$(
+            gcloud run services describe "${FRONTEND_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format='value(status.url)' 2>/dev/null || true
+          )"
+          if [[ -z "$frontend_url" ]]; then
+            frontend_url="https://frontend-not-created.invalid"
+          fi
+          echo "origin=${frontend_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy API to Cloud Run
+        shell: bash
+        env:
+          GARAGE_S3_ENDPOINT: ${{ vars.GARAGE_S3_ENDPOINT }}
+          GARAGE_S3_REGION: ${{ vars.GARAGE_S3_REGION }}
+          GARAGE_S3_BUCKET: ${{ vars.GARAGE_S3_BUCKET }}
+          INITIAL_CORS_ORIGIN: ${{ steps.initial-cors.outputs.origin }}
+        run: |
+          gcloud run deploy "${BACKEND_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --platform=managed \
+            --image="${ARTIFACT_REGISTRY_REPOSITORY}/mygram-api:${GITHUB_SHA}" \
+            --service-account="${RUNTIME_SERVICE_ACCOUNT}" \
+            --execution-environment=gen2 \
+            --port=8080 \
+            --allow-unauthenticated \
+            --set-cloudsql-instances="${CLOUD_SQL_CONNECTION}" \
+            --set-env-vars="GIN_MODE=release,DB_HOST=/cloudsql/${CLOUD_SQL_CONNECTION},DB_PORT=5432,DB_SSLMODE=disable,DB_NAME=${DB_NAME},DB_USER=${DB_USER},CORS_ALLOWED_ORIGINS=${INITIAL_CORS_ORIGIN},PUBLIC_OPENAPI_ENABLED=true,SWAGGER_UI_MODE=public,CAP_ENABLED=false,S3_ENDPOINT=${GARAGE_S3_ENDPOINT},S3_REGION=${GARAGE_S3_REGION},S3_BUCKET=${GARAGE_S3_BUCKET},S3_FORCE_PATH_STYLE=true,PUSH_NOTIFICATIONS_ENABLED=false" \
+            --set-secrets="DB_PASSWORD=mygram-db-password:latest,JWT_SECRET=mygram-jwt-secret:latest,S3_ACCESS_KEY_ID=mygram-s3-access-key:latest,S3_SECRET_ACCESS_KEY=mygram-s3-secret-key:latest" \
+            --labels="managed-by=github-actions,commit-sha=${GITHUB_SHA}" \
+            --quiet
+
+      - name: Read API URL
+        id: api-url
+        shell: bash
+        run: |
+          api_url="$(
+            gcloud run services describe "${BACKEND_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+          if [[ -z "$api_url" ]]; then
+            echo "Cloud Run did not return an API URL" >&2
+            exit 1
+          fi
+          echo "url=${api_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend image with deployed API URL
+        uses: docker/build-push-action@v7
+        with:
+          context: ./mygram-frontend
+          file: ./mygram-frontend/Dockerfile
+          push: true
+          tags: ${{ env.ARTIFACT_REGISTRY_REPOSITORY }}/mygram-web:${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ steps.api-url.outputs.url }}
+            VITE_USE_SAME_ORIGIN_API=false
+            VITE_CAP_ENABLED=false
+          cache-from: type=gha,scope=frontend-production
+          cache-to: type=gha,scope=frontend-production,mode=max
+
+      - name: Deploy frontend to Cloud Run
+        shell: bash
+        env:
+          API_URL: ${{ steps.api-url.outputs.url }}
+        run: |
+          gcloud run deploy "${FRONTEND_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --platform=managed \
+            --image="${ARTIFACT_REGISTRY_REPOSITORY}/mygram-web:${GITHUB_SHA}" \
+            --service-account="${RUNTIME_SERVICE_ACCOUNT}" \
+            --execution-environment=gen2 \
+            --port=80 \
+            --allow-unauthenticated \
+            --set-env-vars="API_UPSTREAM=${API_URL}" \
+            --labels="managed-by=github-actions,commit-sha=${GITHUB_SHA}" \
+            --quiet
+
+      - name: Read frontend URL
+        id: frontend-url
+        shell: bash
+        run: |
+          frontend_url="$(
+            gcloud run services describe "${FRONTEND_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+          if [[ -z "$frontend_url" ]]; then
+            echo "Cloud Run did not return a frontend URL" >&2
+            exit 1
+          fi
+          echo "url=${frontend_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Update API CORS with frontend URL
+        env:
+          FRONTEND_URL: ${{ steps.frontend-url.outputs.url }}
+        run: >-
+          gcloud run services update "${BACKEND_SERVICE}"
+          --project="${GCP_PROJECT_ID}"
+          --region="${GCP_REGION}"
+          --update-env-vars="CORS_ALLOWED_ORIGINS=${FRONTEND_URL}"
+          --quiet
+
+      - name: Run post-deployment smoke tests
+        shell: bash
+        env:
+          API_URL: ${{ steps.api-url.outputs.url }}
+          FRONTEND_URL: ${{ steps.frontend-url.outputs.url }}
+        run: |
+          smoke_test() {
+            local url="$1"
+            echo "Smoke testing ${url}"
+            curl \
+              --fail-with-body \
+              --location \
+              --retry 12 \
+              --retry-all-errors \
+              --retry-delay 5 \
+              --show-error \
+              --silent \
+              "$url" >/dev/null
+          }
+
+          smoke_test "${FRONTEND_URL}/"
+          smoke_test "${API_URL}/health"
+          smoke_test "${API_URL}/health/live"
+          smoke_test "${API_URL}/health/ready"
+
+      - name: Write deployment summary
+        env:
+          API_URL: ${{ steps.api-url.outputs.url }}
+          FRONTEND_URL: ${{ steps.frontend-url.outputs.url }}
+        run: |
+          {
+            echo "## Cloud Run deployment"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- API: ${API_URL}"
+            echo "- Frontend: ${FRONTEND_URL}"
+            echo "- Backend image: \`${ARTIFACT_REGISTRY_REPOSITORY}/mygram-api:${GITHUB_SHA}\`"
+            echo "- Frontend image: \`${ARTIFACT_REGISTRY_REPOSITORY}/mygram-web:${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

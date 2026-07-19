@@ -50,6 +50,54 @@ The Playwright coverage intentionally has two layers:
 
 The `docker-build` job has explicit dependencies on every analysis and test job. Pull requests and pushes only build local CI images with `push: false`; deployment is outside this workflow.
 
+## Continuous Deployment to Cloud Run
+
+The [Cloud Run CD workflow](.github/workflows/cd.yml) runs only for pushes to `main` and manual `workflow_dispatch` runs. It authenticates through Workload Identity Federation with service-account impersonation; no service-account key is stored in GitHub.
+
+Deployment order:
+
+```mermaid
+flowchart LR
+    AUTH[WIF authentication] --> APIIMAGE[Build and push API\ncommit SHA tag]
+    APIIMAGE --> API[Deploy mygram-api\nCloud SQL + Secret Manager]
+    API --> APIURL[Read API URL]
+    APIURL --> WEBIMAGE[Build and push frontend\nVITE_API_BASE_URL=API URL]
+    WEBIMAGE --> WEB[Deploy mygram-web]
+    WEB --> CORS[Update API CORS\nwith frontend URL]
+    CORS --> SMOKE[Smoke tests\nroot + health endpoints]
+```
+
+Repository-level GitHub Actions variables required before deployment:
+
+| Variable | Purpose |
+| --- | --- |
+| `GARAGE_S3_ENDPOINT` | Garage S3-compatible endpoint |
+| `GARAGE_S3_REGION` | Garage region passed to the AWS SDK |
+| `GARAGE_S3_BUCKET` | Garage bucket used for MyGram media |
+
+Required GCP resources and IAM bindings must already exist:
+
+- Enable the Cloud Run, Artifact Registry, Cloud SQL Admin, Secret Manager, IAM Credentials, and Security Token Service APIs.
+- Create the `mygram-containers` Docker repository, Cloud SQL instance/database/user, four Secret Manager secrets, and both service accounts named in the workflow.
+- Allow the GitHub repository identity in the Workload Identity Provider to impersonate `github-mygram-deployer` with `roles/iam.workloadIdentityUser`.
+- Grant the deployment service account permission to write Artifact Registry images, administer Cloud Run services, and act as `mygram-runtime`.
+- Grant `mygram-runtime` `roles/cloudsql.client` and access to the four named secrets. No service-account JSON key is required or accepted by this workflow.
+
+The workflow references these Google Secret Manager secrets directly from Cloud Run without reading their values in GitHub Actions:
+
+- `mygram-db-password` → `DB_PASSWORD`
+- `mygram-jwt-secret` → `JWT_SECRET`
+- `mygram-s3-access-key` → `S3_ACCESS_KEY_ID`
+- `mygram-s3-secret-key` → `S3_SECRET_ACCESS_KEY`
+
+The database configuration was audited for Cloud Run. GORM's PostgreSQL DSN accepts a Unix socket path, so the API uses `DB_HOST=/cloudsql/mygram-suitmedia-figo-2026:asia-southeast2:mygram-postgres`, `DB_PORT=5432`, and `DB_SSLMODE=disable`. Cloud Run's Cloud SQL integration provides the authenticated and encrypted local proxy connection; the application never connects to a production public database address.
+
+The frontend Nginx upstream is runtime-configurable through `API_UPSTREAM`. It defaults to `http://api:8080` for Docker Compose, while CD sets it to the deployed Cloud Run API URL. The Vite bundle also receives that URL through `VITE_API_BASE_URL`, so both direct API calls and the existing same-origin proxy routes remain valid.
+
+Both images use the full Git commit SHA as the Artifact Registry tag. The same `gcloud run deploy` commands create the services on their first run and update them on later runs. Concurrent production deployments share one concurrency group, so a newer commit cancels an older in-progress deployment. Deployment fails if the frontend root or any API health endpoint is unavailable.
+
+Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Redis is not part of this deployment, and media storage remains Garage S3 rather than Google Cloud Storage.
+
 ## Current Backend Features
 
 - User registration and login

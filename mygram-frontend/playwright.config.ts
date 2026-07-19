@@ -4,10 +4,13 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   retries: 0,
-  reporter: "list",
+  outputDir: "test-results/mocked",
+  reporter: [
+    ["list"],
+    ["html", { outputFolder: "playwright-report/mocked", open: "never" }],
+  ],
   use: {
     baseURL: "http://127.0.0.1:3000",
-    channel: "chrome",
     trace: "retain-on-failure",
   },
   webServer: {
@@ -21,14 +24,12 @@ export default defineConfig({
       name: "chrome-desktop",
       use: {
         ...devices["Desktop Chrome"],
-        channel: "chrome",
       },
     },
     {
       name: "chrome-mobile",
       use: {
         ...devices["Pixel 7"],
-        channel: "chrome",
       },
     },
     {
@@ -38,7 +39,6 @@ export default defineConfig({
         deviceScaleFactor: 2,
         hasTouch: true,
         isMobile: false,
-        channel: "chrome",
       },
     },
   ],

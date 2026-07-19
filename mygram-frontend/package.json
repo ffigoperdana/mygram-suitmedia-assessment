@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run test:e2e:mocked",
+    "test:e2e:mocked": "playwright test --config=playwright.config.ts",
+    "test:e2e:real": "playwright test --config=playwright.real.config.ts",
     "lighthouse:mobile": "node ./scripts/lighthouse-mobile.mjs",
     "quality": "npm run typecheck && npm run lint && npm run test && npm run build",
     "quality:full": "npm run quality && npm run test:e2e && npm run lighthouse:mobile"

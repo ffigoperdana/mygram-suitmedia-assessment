@@ -48,7 +48,7 @@ var blockedSocialPathSegments = map[string]struct{}{
 	"watch":       {},
 }
 
-var unsupportedSocialProfileURLError = errors.New("social media URL must be a supported direct profile or channel URL")
+var errUnsupportedSocialProfileURL = errors.New("social media URL must be a supported direct profile or channel URL")
 
 // ValidateSocialProfileURL only allows direct profile/channel URLs for supported social platforms.
 // Search, post, tracking, and generic website URLs are rejected intentionally.
@@ -78,14 +78,14 @@ func ValidateSocialProfileURL(rawURL string) error {
 	host := normalizeSocialHost(parsed.Hostname())
 	segments, err := socialPathSegments(parsed.Path)
 	if err != nil || len(segments) == 0 || containsBlockedSocialSegment(segments) {
-		return unsupportedSocialProfileURLError
+		return errUnsupportedSocialProfileURL
 	}
 
 	if isSupportedSocialProfile(host, segments) {
 		return nil
 	}
 
-	return unsupportedSocialProfileURLError
+	return errUnsupportedSocialProfileURL
 }
 
 func normalizeSocialHost(host string) string {

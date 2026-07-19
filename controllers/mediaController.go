@@ -47,7 +47,11 @@ func ServeMediaObject(c *gin.Context) {
 		jsonError(c, http.StatusBadGateway, "Bad Gateway", "failed to load media")
 		return
 	}
-	defer result.Body.Close()
+	defer func() {
+		if err := result.Body.Close(); err != nil {
+			log.Printf("close object storage response body: %v", err)
+		}
+	}()
 
 	contentType := result.ContentType
 	if contentType == "" {

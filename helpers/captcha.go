@@ -68,7 +68,9 @@ func VerifyCaptchaToken(cfg config.Config, token string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrCaptchaUnavailable, err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		detail := captchaErrorDetail(response)

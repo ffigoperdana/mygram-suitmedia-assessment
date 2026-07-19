@@ -114,7 +114,6 @@ func LoadDotEnv(path string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -142,7 +141,12 @@ func LoadDotEnv(path string) error {
 		_ = os.Setenv(key, value)
 	}
 
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		_ = file.Close()
+		return err
+	}
+
+	return file.Close()
 }
 
 func env(key string, fallback string) string {

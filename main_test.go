@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -583,6 +584,9 @@ func setupDatabaseBackedTest(t *testing.T) *gin.Engine {
 
 	if database.GetDB() == nil {
 		if err := database.StartDB(); err != nil {
+			if strings.EqualFold(os.Getenv("REQUIRE_TEST_DATABASE"), "true") {
+				t.Fatalf("required test database is unavailable: %v", err)
+			}
 			t.Skipf("test database is unavailable: %v", err)
 		}
 	}
@@ -593,30 +597,37 @@ func setupDatabaseBackedTest(t *testing.T) *gin.Engine {
 
 func configureTestEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("GIN_MODE", "test")
-	t.Setenv("JWT_SECRET", "test-secret-that-is-long-enough-for-mygram")
-	t.Setenv("JWT_EXPIRATION_HOURS", "24")
-	t.Setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
-	t.Setenv("CAP_ENABLED", "false")
-	t.Setenv("PUBLIC_OPENAPI_ENABLED", "true")
-	t.Setenv("SWAGGER_UI_MODE", "internal")
-	t.Setenv("S3_ENDPOINT", " ")
-	t.Setenv("S3_REGION", "garage")
-	t.Setenv("S3_BUCKET", " ")
-	t.Setenv("S3_ACCESS_KEY_ID", " ")
-	t.Setenv("S3_SECRET_ACCESS_KEY", " ")
-	t.Setenv("S3_FORCE_PATH_STYLE", "true")
-	t.Setenv("S3_UPLOAD_MAX_MB", "5")
-	t.Setenv("PUSH_NOTIFICATIONS_ENABLED", "false")
-	t.Setenv("VAPID_PUBLIC_KEY", "")
-	t.Setenv("VAPID_PRIVATE_KEY", "")
-	t.Setenv("VAPID_SUBJECT", "mailto:test@example.com")
-	t.Setenv("DB_HOST", "localhost")
-	t.Setenv("DB_USER", "postgres")
-	t.Setenv("DB_PASSWORD", "admin")
-	t.Setenv("DB_NAME", "finalproject_test")
-	t.Setenv("DB_PORT", "5432")
-	t.Setenv("DB_SSLMODE", "disable")
+	setTestEnvDefault(t, "GIN_MODE", "test")
+	setTestEnvDefault(t, "JWT_SECRET", "test-secret-that-is-long-enough-for-mygram")
+	setTestEnvDefault(t, "JWT_EXPIRATION_HOURS", "24")
+	setTestEnvDefault(t, "CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+	setTestEnvDefault(t, "CAP_ENABLED", "false")
+	setTestEnvDefault(t, "PUBLIC_OPENAPI_ENABLED", "true")
+	setTestEnvDefault(t, "SWAGGER_UI_MODE", "internal")
+	setTestEnvDefault(t, "S3_ENDPOINT", " ")
+	setTestEnvDefault(t, "S3_REGION", "garage")
+	setTestEnvDefault(t, "S3_BUCKET", " ")
+	setTestEnvDefault(t, "S3_ACCESS_KEY_ID", " ")
+	setTestEnvDefault(t, "S3_SECRET_ACCESS_KEY", " ")
+	setTestEnvDefault(t, "S3_FORCE_PATH_STYLE", "true")
+	setTestEnvDefault(t, "S3_UPLOAD_MAX_MB", "5")
+	setTestEnvDefault(t, "PUSH_NOTIFICATIONS_ENABLED", "false")
+	setTestEnvDefault(t, "VAPID_PUBLIC_KEY", "")
+	setTestEnvDefault(t, "VAPID_PRIVATE_KEY", "")
+	setTestEnvDefault(t, "VAPID_SUBJECT", "mailto:test@example.com")
+	setTestEnvDefault(t, "DB_HOST", "localhost")
+	setTestEnvDefault(t, "DB_USER", "postgres")
+	setTestEnvDefault(t, "DB_PASSWORD", "admin")
+	setTestEnvDefault(t, "DB_NAME", "finalproject_test")
+	setTestEnvDefault(t, "DB_PORT", "5432")
+	setTestEnvDefault(t, "DB_SSLMODE", "disable")
+}
+
+func setTestEnvDefault(t *testing.T, key string, value string) {
+	t.Helper()
+	if _, exists := os.LookupEnv(key); !exists {
+		t.Setenv(key, value)
+	}
 }
 
 func resetTestDatabase(t *testing.T) {

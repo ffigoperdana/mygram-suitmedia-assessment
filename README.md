@@ -8,6 +8,48 @@ MyGram is a Go/Gin social media backend for users, photos, comments, and social 
 
 See [TASK.md](TASK.md) for the phased implementation handoff and [DEPLOYMENT.md](DEPLOYMENT.md) for the Coolify/Jenkins deployment plan.
 
+## Continuous Integration
+
+GitHub Actions runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) for every pull request and push. The workflow has read-only repository permissions, uses ephemeral test-only configuration, and never connects to Cloud SQL or pushes container images.
+
+```mermaid
+flowchart LR
+    BSA[backend-static-analysis]
+    FSA[frontend-static-analysis]
+    BUT[backend-unit-test]
+    BIT[backend-integration-test\nPostgreSQL service]
+    FUT[frontend-unit-test]
+    E2E[end-to-end-test\nmocked UI + real stack]
+    DB[(ephemeral PostgreSQL)]
+    BUILD[docker-build\nBuildKit cache, no push]
+
+    DB --> BIT
+    DB --> E2E
+    BSA --> BUILD
+    FSA --> BUILD
+    BUT --> BUILD
+    BIT --> BUILD
+    FUT --> BUILD
+    E2E --> BUILD
+```
+
+| Assessment requirement | GitHub Actions job | Evidence produced |
+| --- | --- | --- |
+| Backend static analysis | `backend-static-analysis` | `gofmt` check, `go vet ./...`, and golangci-lint |
+| Frontend static analysis | `frontend-static-analysis` | clean `npm ci`, TypeScript typecheck, and ESLint |
+| Backend unit test | `backend-unit-test` | database-independent tests with the race detector and uploaded coverage profile |
+| Backend integration test | `backend-integration-test` | API/controller tests against an ephemeral PostgreSQL 15 service; CI fails if the database cannot be reached |
+| Frontend unit test | `frontend-unit-test` | Vitest suite after a clean `npm ci` |
+| End-to-end test | `end-to-end-test` | Playwright Chromium suites plus reports uploaded on failure |
+| Backend and frontend container build | `docker-build` | both Dockerfiles built with BuildKit GitHub Actions cache after all quality/test jobs pass; images are not pushed |
+
+The Playwright coverage intentionally has two layers:
+
+- `npm run test:e2e:mocked` runs the broad UI suite with Playwright route mocks. It validates browser navigation, forms, authorization UI, responsive viewports, and PWA behavior without depending on external services.
+- `npm run test:e2e:real` is a real-stack smoke test. It uses the actual React/Vite frontend, Go API, and an ephemeral PostgreSQL service to register, log in, verify readiness, and load the authenticated feed. It does not use Garage, Cloud SQL, GCP, or any production endpoint.
+
+The `docker-build` job has explicit dependencies on every analysis and test job. Pull requests and pushes only build local CI images with `push: false`; deployment is outside this workflow.
+
 ## Current Backend Features
 
 - User registration and login

@@ -57,6 +57,6 @@ No test is failing at the end of this baseline.
 
 - `docker-compose.fullstack.yml` has development defaults, including a default PostgreSQL password; deployment must use a private secret-managed `.env` file with strong values.
 - Both Compose files retain the obsolete `version` key. Docker Compose v5 accepts it but warns that it is ignored.
-- The frontend Docker image uses Node 20 while one development dependency (`start-server-and-test`) declares Node 22+ or 24+; the production image build currently succeeds, but future scripts may require a Node upgrade.
+- The frontend Docker build now uses Node 24, matching the CI runtime and current development dependency engine requirements.
 - There is no dedicated backend database integration-test suite. Existing Go tests, frontend unit tests, and mocked Playwright smoke tests do not validate a running PostgreSQL/API integration path.
 - Production requires externally provisioned PostgreSQL, Garage S3-compatible storage, and all required runtime secrets. No GCP, Redis, or deployment action was performed in this stage.

@@ -67,7 +67,11 @@ func UploadPhotoImage(c *gin.Context) {
 		jsonError(c, http.StatusBadRequest, "Bad Request", "failed to read image file")
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("close uploaded image file: %v", err)
+		}
+	}()
 
 	contentType, extension, err := detectUploadImageType(file)
 	if err != nil {

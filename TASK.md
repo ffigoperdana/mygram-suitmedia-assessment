@@ -1,7 +1,5 @@
 # MyGram Fullstack Task Handoff
 
-This file is the source of truth for future Codex, GLM 5.2, Mimo, or other agent runs. Execute one phase at a time, keep changes small, and verify each phase before moving on.
-
 ## Current Repository Facts
 
 - Backend is a Go Gin API in the repository root with module name `finalproject`.
@@ -19,16 +17,6 @@ This file is the source of truth for future Codex, GLM 5.2, Mimo, or other agent
 - Backend tests now cover auth, users, photos, comments, social media, CORS, and health paths.
 - The old `mygram-frontend/` attempt was empty/incomplete. A fresh React scaffold now exists there.
 - Production deploy target is Coolify on a homelab, with GHCR as image registry and Jenkins as the main deployment pipeline.
-
-## Model Working Style
-
-Use a hybrid task style:
-
-- Codex can usually take one whole phase at a time.
-- GLM or Mimo should receive smaller task IDs, for example `B3` or `F4`, with the acceptance criteria included.
-- Do not ask the next model to "make it perfect" without a bounded task ID.
-- After each task, run the verification command listed for that phase.
-- Do not rewrite unrelated files just to change style.
 
 ## Phase A - Baseline And Cleanup
 

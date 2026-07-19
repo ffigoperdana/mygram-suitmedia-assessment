@@ -74,7 +74,11 @@ export function RegisterPage() {
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span>New accounts are protected by captcha before they reach the API.</span>
+              <span>
+                {captchaRequired
+                  ? "New accounts are protected by captcha before they reach the API."
+                  : "Passwords are hashed before account data is stored."}
+              </span>
             </div>
           </div>
         </section>

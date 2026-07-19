@@ -85,7 +85,11 @@ export function LoginPage() {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">
                   <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 </span>
-                <span>Captcha-protected auth with role-aware access.</span>
+                <span>
+                  {captchaRequired
+                    ? "Captcha-protected auth with role-aware access."
+                    : "Role-aware access with securely hashed passwords."}
+                </span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">

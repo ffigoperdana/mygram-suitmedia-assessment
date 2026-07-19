@@ -20,6 +20,8 @@ env:
   ARTIFACT_REGISTRY_REPOSITORY: asia-southeast2-docker.pkg.dev/mygram-suitmedia-figo-2026/mygram-containers
   BACKEND_SERVICE: mygram-api
   FRONTEND_SERVICE: mygram-web
+  API_PUBLIC_URL: https://mygram-api-734925981385.asia-southeast2.run.app
+  FRONTEND_PUBLIC_URL: https://mygram-web-734925981385.asia-southeast2.run.app
   WORKLOAD_IDENTITY_PROVIDER: projects/734925981385/locations/global/workloadIdentityPools/github-actions-pool/providers/github
   DEPLOYMENT_SERVICE_ACCOUNT: github-mygram-deployer@mygram-suitmedia-figo-2026.iam.gserviceaccount.com
   RUNTIME_SERVICE_ACCOUNT: mygram-runtime@mygram-suitmedia-figo-2026.iam.gserviceaccount.com
@@ -189,7 +191,7 @@ jobs:
           gcloud run services update "${BACKEND_SERVICE}"
           --project="${GCP_PROJECT_ID}"
           --region="${GCP_REGION}"
-          --update-env-vars="CORS_ALLOWED_ORIGINS=${FRONTEND_URL}"
+          --update-env-vars="^@^CORS_ALLOWED_ORIGINS=${FRONTEND_URL},${FRONTEND_PUBLIC_URL}"
           --quiet
 
       - name: Run post-deployment smoke tests
@@ -213,9 +215,41 @@ jobs:
           }
 
           smoke_test "${FRONTEND_URL}/"
+          smoke_test "${FRONTEND_PUBLIC_URL}/"
+          smoke_test "${FRONTEND_PUBLIC_URL}/docs"
           smoke_test "${API_URL}/health"
           smoke_test "${API_URL}/health/live"
           smoke_test "${API_URL}/health/ready"
+          smoke_test "${API_PUBLIC_URL}/health"
+          smoke_test "${API_PUBLIC_URL}/health/live"
+          smoke_test "${API_PUBLIC_URL}/health/ready"
+
+          cors_smoke_test() {
+            local origin="$1"
+            local headers_file
+            headers_file="$(mktemp)"
+            curl \
+              --fail-with-body \
+              --request OPTIONS \
+              --header "Origin: ${origin}" \
+              --header "Access-Control-Request-Method: POST" \
+              --header "Access-Control-Request-Headers: content-type" \
+              --dump-header "${headers_file}" \
+              --output /dev/null \
+              --show-error \
+              --silent \
+              "${API_URL}/api/v1/auth/login"
+
+            if ! grep --ignore-case --fixed-strings \
+              "access-control-allow-origin: ${origin}" "${headers_file}"; then
+              echo "CORS preflight did not allow ${origin}" >&2
+              cat "${headers_file}" >&2
+              return 1
+            fi
+          }
+
+          cors_smoke_test "${FRONTEND_URL}"
+          cors_smoke_test "${FRONTEND_PUBLIC_URL}"
 
       - name: Write deployment summary
         env:

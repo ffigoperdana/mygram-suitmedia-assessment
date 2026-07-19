@@ -96,7 +96,7 @@ The frontend Nginx upstream is runtime-configurable through `API_UPSTREAM`. It d
 
 Both images use the full Git commit SHA as the Artifact Registry tag. The same `gcloud run deploy` commands create the services on their first run and update them on later runs. Concurrent production deployments share one concurrency group, so a newer commit cancels an older in-progress deployment. Deployment fails if the frontend root or any API health endpoint is unavailable.
 
-Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Redis is not part of this deployment, and media storage remains Garage S3 rather than Google Cloud Storage.
+Reviewer access, user/admin flows, and secure one-time admin provisioning are documented in [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md). Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Redis is not part of this deployment, and media storage remains Garage S3 rather than Google Cloud Storage.
 
 ## Current Backend Features
 

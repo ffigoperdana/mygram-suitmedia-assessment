@@ -1,0 +1,74 @@
+# Docker ignore file for optimizing build context
+# Ignore common non-essential files and directories
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files and credentials (should use secrets management)
+.env
+.env.*
+!.env.example
+gha-creds-*.json
+service-account*.json
+*service-account*.json
+*service_account*.json
+.secrets/
+secrets/
+*.secret
+*.secrets
+
+# Test files (can be included if needed for testing in container)
+*_test.go
+test/
+coverage.out
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts (if any)
+dist/
+build/
+
+# Node modules (if any)
+node_modules/
+.npm-cache/
+mygram-frontend/
+
+# Docker files (don't need these in the build context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD files
+.github/
+Jenkinsfile
+.gitlab-ci.yml
+
+# Coolify specific
+coolify.yml

@@ -1,0 +1,182 @@
+name: Phase E Docker Check
+
+on:
+  pull_request:
+    branches: [main, final-project]
+  push:
+    branches: [main, final-project]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.x"
+  NODE_VERSION: "20"
+  BACKEND_IMAGE: mygram-api:ci
+  FRONTEND_IMAGE: mygram-web:ci
+  PUBLIC_API_BASE_URL: https://api.mygram.example.com
+
+jobs:
+  backend:
+    name: Backend Quality
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: finalproject_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: admin
+        options: >-
+          --health-cmd "pg_isready -U postgres -d finalproject_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Verify Go modules
+        run: go mod verify
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        env:
+          GIN_MODE: test
+          JWT_SECRET: test-secret-that-is-long-enough-for-mygram
+          DB_HOST: localhost
+          DB_USER: postgres
+          DB_PASSWORD: admin
+          DB_NAME: finalproject_test
+          DB_PORT: "5432"
+          DB_SSLMODE: disable
+        run: go test -count=1 ./...
+
+  frontend:
+    name: Frontend Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mygram-frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mygram-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        env:
+          VITE_API_BASE_URL: ${{ env.PUBLIC_API_BASE_URL }}
+          VITE_CAP_ENABLED: "false"
+          VITE_CAP_BASE_URL: https://cap.fgdev.tech
+          VITE_CAP_SITE_KEY: ci-site-key
+          VITE_CAP_REQUIRED_ON_LOGIN: "true"
+        run: npm run build
+
+  docker:
+    name: Docker Build And Compose Check
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: ${{ env.BACKEND_IMAGE }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mygram-frontend
+          file: ./mygram-frontend/Dockerfile
+          push: false
+          tags: ${{ env.FRONTEND_IMAGE }}
+          build-args: |
+            VITE_API_BASE_URL=${{ env.PUBLIC_API_BASE_URL }}
+            VITE_CAP_ENABLED=false
+            VITE_CAP_BASE_URL=https://cap.fgdev.tech
+            VITE_CAP_SITE_KEY=ci-site-key
+            VITE_CAP_REQUIRED_ON_LOGIN=true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Validate production compose
+        env:
+          BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}
+          FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}
+          DB_NAME: finalproject
+          DB_USER: postgres
+          DB_PASSWORD: ci-postgres-password
+          JWT_SECRET: ci-jwt-secret-that-is-long-enough-for-mygram
+          JWT_EXPIRATION_HOURS: "24"
+          CORS_ALLOWED_ORIGINS: https://mygram.example.com,https://docs.mygram.example.com
+          PUBLIC_OPENAPI_ENABLED: "true"
+          SWAGGER_UI_MODE: public
+          CAP_ENABLED: "false"
+          CAP_BASE_URL: https://cap.fgdev.tech
+          CAP_SITE_KEY: ci-site-key
+          CAP_SECRET_KEY: ci-secret-key
+          CAP_REQUIRED_ON_LOGIN: "true"
+          S3_ENDPOINT: https://s3.fgdev.tech
+          S3_REGION: garage
+          S3_BUCKET: fgdev-media
+          S3_ACCESS_KEY_ID: ci-access-key
+          S3_SECRET_ACCESS_KEY: ci-secret-key
+          S3_FORCE_PATH_STYLE: "true"
+          S3_PUBLIC_BASE_URL: ""
+          S3_UPLOAD_MAX_MB: "5"
+        run: docker compose -f docker-compose.prod.yml config
+
+      - name: Validate optional local compose
+        env:
+          JWT_SECRET: ci-jwt-secret-that-is-long-enough-for-mygram
+          DB_PASSWORD: admin
+          CORS_ALLOWED_ORIGINS: http://localhost:3000
+          PUBLIC_API_BASE_URL: http://localhost:8080
+          VITE_CAP_ENABLED: "false"
+          S3_ENDPOINT: ""
+          S3_BUCKET: ""
+          S3_ACCESS_KEY_ID: ""
+          S3_SECRET_ACCESS_KEY: ""
+        run: docker compose -f docker-compose.fullstack.yml config

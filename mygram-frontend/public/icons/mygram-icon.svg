@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MyGram icon">
+  <rect width="512" height="512" rx="96" fill="#16766d"/>
+  <path d="M146 176c0-24 19-43 43-43h134c24 0 43 19 43 43v160c0 24-19 43-43 43H189c-24 0-43-19-43-43V176Z" fill="#f8fafc"/>
+  <path d="M189 209c0-18 14-32 32-32h70c18 0 32 14 32 32v8h-34v-5c0-4-3-7-7-7h-52c-4 0-7 3-7 7v5h-34v-8Z" fill="#16766d"/>
+  <circle cx="256" cy="284" r="55" fill="#16766d"/>
+  <circle cx="256" cy="284" r="27" fill="#f8fafc"/>
+  <circle cx="324" cy="217" r="16" fill="#f59e0b"/>
+</svg>

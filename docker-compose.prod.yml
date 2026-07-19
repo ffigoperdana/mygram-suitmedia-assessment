@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-finalproject}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-finalproject}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - mygram
+    restart: unless-stopped
+
+  api:
+    image: ${BACKEND_IMAGE}
+    pull_policy: always
+    environment:
+      PORT: 8080
+      GIN_MODE: release
+      DB_HOST: postgres
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-finalproject}
+      DB_PORT: 5432
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      PUBLIC_OPENAPI_ENABLED: ${PUBLIC_OPENAPI_ENABLED:-true}
+      SWAGGER_UI_MODE: ${SWAGGER_UI_MODE:-public}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_AGE: ${BOOTSTRAP_ADMIN_AGE:-21}
+      BOOTSTRAP_USER_EMAIL: ${BOOTSTRAP_USER_EMAIL:-}
+      BOOTSTRAP_USER_USERNAME: ${BOOTSTRAP_USER_USERNAME:-}
+      BOOTSTRAP_USER_PASSWORD: ${BOOTSTRAP_USER_PASSWORD:-}
+      BOOTSTRAP_USER_AGE: ${BOOTSTRAP_USER_AGE:-18}
+      CAP_ENABLED: ${CAP_ENABLED:-true}
+      CAP_BASE_URL: ${CAP_BASE_URL:-https://cap.fgdev.tech}
+      CAP_SITE_KEY: ${CAP_SITE_KEY}
+      CAP_SECRET_KEY: ${CAP_SECRET_KEY}
+      CAP_REQUIRED_ON_LOGIN: ${CAP_REQUIRED_ON_LOGIN:-true}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-garage}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_UPLOAD_MAX_MB: ${S3_UPLOAD_MAX_MB:-4}
+      PUSH_NOTIFICATIONS_ENABLED: ${PUSH_NOTIFICATIONS_ENABLED:-false}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      # Web Push VAPID contact identity only; not an SMTP recipient.
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mygram", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - mygram
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    pull_policy: always
+    expose:
+      - "80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mygram
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  mygram:
+    driver: bridge

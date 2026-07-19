@@ -1,0 +1,97 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mygram-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-finalproject}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-admin}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-finalproject}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mygram
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mygram-api
+    environment:
+      PORT: 8080
+      GIN_MODE: ${GIN_MODE:-release}
+      DB_HOST: postgres
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_NAME: ${DB_NAME:-finalproject}
+      DB_PORT: 5432
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      PUBLIC_OPENAPI_ENABLED: ${PUBLIC_OPENAPI_ENABLED:-true}
+      SWAGGER_UI_MODE: ${SWAGGER_UI_MODE:-internal}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-garage}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
+      S3_UPLOAD_MAX_MB: ${S3_UPLOAD_MAX_MB:-4}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mygram", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - mygram
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./mygram-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8080}
+        VITE_CAP_ENABLED: ${VITE_CAP_ENABLED:-false}
+        VITE_CAP_BASE_URL: ${VITE_CAP_BASE_URL:-}
+        VITE_CAP_SITE_KEY: ${VITE_CAP_SITE_KEY:-}
+        VITE_CAP_REQUIRED_ON_LOGIN: ${VITE_CAP_REQUIRED_ON_LOGIN:-true}
+    container_name: mygram-web
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mygram
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  mygram:
+    driver: bridge

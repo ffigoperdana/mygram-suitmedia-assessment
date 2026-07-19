@@ -1,0 +1,55 @@
+# Coolify metadata for the MyGram fullstack app.
+# The primary deployment source is docker-compose.prod.yml.
+
+version: "1.0"
+
+app:
+  name: "mygram-fullstack"
+  description: "MyGram React frontend, Go API, and PostgreSQL stack"
+  framework: "docker-compose"
+  compose_file: "docker-compose.prod.yml"
+
+services:
+  frontend:
+    public: true
+    internal_port: 80
+    health_path: "/"
+  api:
+    public: true
+    internal_port: 8080
+    health_path: "/health"
+  postgres:
+    public: false
+    volume: "postgres_data"
+
+environment:
+  required:
+    - BACKEND_IMAGE
+    - FRONTEND_IMAGE
+    - DB_PASSWORD
+    - JWT_SECRET
+    - CORS_ALLOWED_ORIGINS
+    - S3_ENDPOINT
+    - S3_BUCKET
+    - S3_ACCESS_KEY_ID
+    - S3_SECRET_ACCESS_KEY
+  optional:
+    - DB_NAME
+    - DB_USER
+    - JWT_EXPIRATION_HOURS
+    - PUBLIC_OPENAPI_ENABLED
+    - SWAGGER_UI_MODE
+    - CAP_ENABLED
+    - CAP_BASE_URL
+    - CAP_SITE_KEY
+    - CAP_SECRET_KEY
+    - CAP_REQUIRED_ON_LOGIN
+    - S3_REGION
+    - S3_FORCE_PATH_STYLE
+    - S3_PUBLIC_BASE_URL
+    - S3_UPLOAD_MAX_MB
+
+domains:
+  frontend: "https://mygram.example.com"
+  api: "https://api.mygram.example.com"
+  docs: "https://docs.mygram.example.com"

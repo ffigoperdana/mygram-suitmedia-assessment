@@ -1,0 +1,15 @@
+node_modules
+.npm-cache
+dist
+.env
+.env.*
+!.env.example
+gha-creds-*.json
+service-account*.json
+*service-account*.json
+*service_account*.json
+.secrets/
+secrets/
+*.secret
+*.secrets
+npm-debug.log*

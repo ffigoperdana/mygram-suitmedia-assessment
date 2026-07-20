@@ -7,6 +7,18 @@ MyGram is a Go/Gin social media backend for users, photos, comments, and social 
 - Primary deployment: Google Cloud Run, Cloud SQL for PostgreSQL, Memorystore for Redis, and Garage S3-compatible storage
 - Alternative deployment assets: Docker Compose, Coolify metadata, and Jenkins pipeline support
 
+## Credential Testing
+
+Regular user
+Email: reviewer.user@example.com
+Username: reviewer-user
+Password : suitmedia-user123
+
+Administrator
+Email: reviewer.admin@example.com
+Username: reviewer-admin
+Password : suitmedia-admin123
+
 See [TASK.md](TASK.md) for the phased implementation handoff and [DEPLOYMENT.md](DEPLOYMENT.md) for the Coolify/Jenkins deployment plan.
 
 ## Infrastructure overview

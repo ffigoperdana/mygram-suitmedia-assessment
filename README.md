@@ -7,18 +7,6 @@ MyGram is a Go/Gin social media backend for users, photos, comments, and social 
 - Primary deployment: Google Cloud Run, Cloud SQL for PostgreSQL, Memorystore for Redis, and Garage S3-compatible storage
 - Alternative deployment assets: Docker Compose, Coolify metadata, and Jenkins pipeline support
 
-## Credential Testing
-
-Regular user
-Email: reviewer.user@example.com
-Username: reviewer-user
-Password : suitmedia-user123
-
-Administrator
-Email: reviewer.admin@example.com
-Username: reviewer-admin
-Password : suitmedia-admin123
-
 See [TASK.md](TASK.md) for the phased implementation handoff and [DEPLOYMENT.md](DEPLOYMENT.md) for the Coolify/Jenkins deployment plan.
 
 ## Infrastructure overview
@@ -44,12 +32,13 @@ The PostgreSQL instance is not embedded in Cloud Run. `mygram-api` is a stateles
 
 - [x] **Container as a Service (CaaS):** backend and frontend run as separate Google Cloud Run services and deploy from immutable commit-SHA images in Artifact Registry.
 - [x] **PostgreSQL database:** Cloud SQL for PostgreSQL is connected through Cloud Run's authenticated Unix socket; CI uses only an ephemeral PostgreSQL container.
-- [x] **Redis implementation:** Memorystore integration, cache-aside, invalidation, fail-open fallback, Direct VPC egress, and Redis-backed integration tests are implemented. Production is considered active only after bootstrap and a green CD readiness check reports `redis: connected`.
+- [x] **Redis implementation:** Memorystore integration, cache-aside, invalidation, fail-open fallback, Direct VPC egress, and Redis-backed integration tests are implemented. Production connectivity was confirmed on 20 July 2026 by a green CD run and readiness reporting `redis: connected`.
 - [x] **Object Storage:** Garage remains the S3-compatible object store. It has not been replaced by Google Cloud Storage.
 - [x] **Cost-optimized assessment design:** Cloud Run can scale to zero when idle, images use BuildKit caching, and Redis uses the requested Basic Tier 1 GB. Actual cost still depends on Cloud SQL sizing, traffic, egress, and Garage hosting.
+- [ ] **Highly available end-to-end:** the HA upgrade path is documented, but the deployed assessment is not fully HA. Cloud Run is managed and multi-instance capable; Memorystore Basic has no replica/failover, and Cloud SQL regional HA plus Garage replication have not been verified. The production design should use Memorystore Standard Tier, Cloud SQL regional HA with backups/PITR, and replicated Garage storage.
 - [x] **Application-tier autoscaling:** Cloud Run automatically scales API and frontend instances. PostgreSQL and Basic Tier Redis are provisioned-capacity services and must be sized and monitored separately.
 - [x] **Security baseline:** HTTPS, WIF without JSON keys, least-privilege workflow permissions, Secret Manager references, private Redis networking, Cloud SQL authenticated connectivity, password hashing, JWT authentication, RBAC, CORS, and security headers are present. Redis failure is deliberately fail-open, so rate limiting is resilience-oriented rather than a hard security boundary.
-- [ ] **1,500 concurrent users verified:** a manual, staged k6 workflow now covers smoke, approximately 100 CCU, and a guarded 1,500 CCU peak. Check this item only after Redis-enabled CD is green and the one-time peak run passes its thresholds with an uploaded evidence artifact.
+- [ ] **1,500 concurrent users verified:** the one-time peak test reached 1,500 VUs, but failed its availability thresholds with a 13.26% connection-failure rate. Latency thresholds passed for completed requests and the service remained healthy after the run. See the evidence below; this capacity target must not be claimed as passed.
 
 ### Reviewer accounts and authentication
 
@@ -200,9 +189,25 @@ After both secrets and identity variables succeed, the script sets `REVIEWER_SEE
 
 ### One-time load-test evidence
 
-The manual [`Load Test - Production`](.github/workflows/load-test.yml) workflow uses pinned `grafana/k6:1.6.1` and never runs on push. Run `smoke`, then `normal` (100 VUs), and finally run `peak` once with confirmation `RUN_1500_CCU`. Peak ramps to and holds 1,500 concurrent virtual users, using 70% frontend root traffic, 20% API liveness, and 10% API readiness with a 1–3 second user think time. The readiness preflight requires both PostgreSQL and Redis to report `connected`.
+The manual [`Load Test - Production`](.github/workflows/load-test.yml) workflow uses pinned `grafana/k6:1.6.1` and never runs on push. Peak ramps through 100 and 500 VUs, reaches and holds 1,500 concurrent virtual users, and uses 70% frontend root traffic, 20% API liveness, and 10% API readiness with a 1–3 second user think time. The readiness preflight requires both PostgreSQL and Redis to report `connected`.
 
 The pass thresholds are request failures below 1%, checks above 99%, p95 below 1.5 seconds, and p99 below 3 seconds. GitHub uploads the k6 JSON summary and console output for 30 days. This is infrastructure-capacity evidence for the deployed frontend, API, Cloud SQL, and Redis path; it is not a substitute for a separate authenticated business-transaction benchmark.
+
+The one-time production run was executed on **20 July 2026, 01:19–01:24 UTC**, from one Docker-based k6 generator. PostgreSQL and Redis preflight checks passed before load was applied.
+
+| Metric | Observed | Threshold | Result |
+| --- | ---: | ---: | --- |
+| Maximum virtual users | 1,500 | 1,500 | Reached |
+| Completed iterations | 64,208 | Informational | — |
+| HTTP requests | 64,209 (209.30 requests/s average) | Informational | — |
+| Successful checks | 86.73% (55,695/64,211) | > 99% | **Failed** |
+| Request failure rate | 13.26% (8,516/64,209) | < 1% | **Failed** |
+| Response time p95 | 13.35 ms | < 1,500 ms | Passed |
+| Response time p99 | 15.56 ms | < 3,000 ms | Passed |
+
+Failures first appeared during ramp-up at approximately 847 VUs. They were connection refusals before an HTTP response, across several Google Frontend IPs and both Cloud Run service URLs; no application HTTP 5xx response was recorded in the k6 failure messages. A post-test check immediately returned frontend HTTP 200 and API readiness with both `database: connected` and `redis: connected`.
+
+**Conclusion:** the stack survived the run and recovered/continued serving afterward, but the 1,500 CCU acceptance criterion did not pass. A single Windows/Docker generator cannot distinguish conclusively between generator/NAT exhaustion, Google Frontend connection handling, and Cloud Run scaling or quota limits. Before retesting, correlate the failure window with Cloud Run instance count, startup latency, request count, rejected connections, max-instance/concurrency settings, Cloud SQL connections, and Redis metrics; then use a controlled distributed load generator. No second peak run was performed as part of this one-time assessment test.
 
 Reviewer access, user/admin flows, and secure one-time admin provisioning are documented in [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md). Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Media storage remains Garage S3 rather than Google Cloud Storage.
 

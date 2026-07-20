@@ -1,0 +1,93 @@
+name: Load Test - Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Load profile to execute
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - normal
+          - peak
+      confirm_peak:
+        description: Type RUN_1500_CCU when selecting peak
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mygram-production-load-test
+  cancel-in-progress: false
+
+env:
+  API_URL: https://mygram-api-734925981385.asia-southeast2.run.app
+  FRONTEND_URL: https://mygram-web-734925981385.asia-southeast2.run.app
+  K6_IMAGE: grafana/k6:1.6.1
+
+jobs:
+  production-load-test:
+    name: ${{ inputs.profile }}-profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Guard the 1,500 CCU profile
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+          CONFIRM_PEAK: ${{ inputs.confirm_peak }}
+        run: |
+          if [[ "$PROFILE" == "peak" && "$CONFIRM_PEAK" != "RUN_1500_CCU" ]]; then
+            echo "Peak runs create material production traffic. Set confirm_peak to RUN_1500_CCU." >&2
+            exit 1
+          fi
+
+      - name: Run staged k6 load test
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          set -o pipefail
+          mkdir -p load-test-results
+          docker run --rm \
+            --env API_URL \
+            --env FRONTEND_URL \
+            --env PROFILE \
+            --volume "${PWD}:/work" \
+            --workdir /work \
+            "${K6_IMAGE}" run \
+            --summary-export=/work/load-test-results/summary.json \
+            /work/tests/load/mygram.js 2>&1 | tee load-test-results/output.txt
+
+      - name: Upload k6 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: k6-${{ inputs.profile }}-${{ github.run_id }}
+          path: load-test-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Write load-test summary
+        if: always()
+        env:
+          PROFILE: ${{ inputs.profile }}
+        run: |
+          {
+            echo "## MyGram production load test"
+            echo
+            echo "- Profile: \`${PROFILE}\`"
+            echo "- API: ${API_URL}"
+            echo "- Frontend: ${FRONTEND_URL}"
+            echo "- Evidence artifact: \`k6-${PROFILE}-${GITHUB_RUN_ID}\`"
+            echo "- Thresholds: failures < 1%, checks > 99%, p95 < 1.5s, p99 < 3s"
+          } >> "$GITHUB_STEP_SUMMARY"

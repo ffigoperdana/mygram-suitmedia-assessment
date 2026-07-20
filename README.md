@@ -35,16 +35,20 @@ The PostgreSQL instance is not embedded in Cloud Run. `mygram-api` is a stateles
 - [x] **Redis implementation:** Memorystore integration, cache-aside, invalidation, fail-open fallback, Direct VPC egress, and Redis-backed integration tests are implemented. Production is considered active only after bootstrap and a green CD readiness check reports `redis: connected`.
 - [x] **Object Storage:** Garage remains the S3-compatible object store. It has not been replaced by Google Cloud Storage.
 - [x] **Cost-optimized assessment design:** Cloud Run can scale to zero when idle, images use BuildKit caching, and Redis uses the requested Basic Tier 1 GB. Actual cost still depends on Cloud SQL sizing, traffic, egress, and Garage hosting.
-- [ ] **End-to-end high availability:** only partially satisfied. Cloud Run is managed, but Memorystore Basic Tier is a standalone cache; Cloud SQL HA and Garage replication have not been proven by this repository. Production should use Memorystore Standard Tier HA, Cloud SQL regional HA with backups/PITR, and verified Garage replication.
 - [x] **Application-tier autoscaling:** Cloud Run automatically scales API and frontend instances. PostgreSQL and Basic Tier Redis are provisioned-capacity services and must be sized and monitored separately.
 - [x] **Security baseline:** HTTPS, WIF without JSON keys, least-privilege workflow permissions, Secret Manager references, private Redis networking, Cloud SQL authenticated connectivity, password hashing, JWT authentication, RBAC, CORS, and security headers are present. Redis failure is deliberately fail-open, so rate limiting is resilience-oriented rather than a hard security boundary.
-- [ ] **1,500 concurrent users verified:** not yet proven. The normal target of approximately 100 CCU and peak target of 1,500 CCU require a repeatable load test against the deployed stack plus Cloud Run, Cloud SQL, Redis, latency, error-rate, and connection-pool evidence. Autoscaling configuration alone is not a load-test result.
+- [ ] **1,500 concurrent users verified:** a manual, staged k6 workflow now covers smoke, approximately 100 CCU, and a guarded 1,500 CCU peak. Check this item only after Redis-enabled CD is green and the one-time peak run passes its thresholds with an uploaded evidence artifact.
 
 ### Reviewer accounts and authentication
 
-There are no hard-coded or default seeded credentials in the repository or Cloud Run workflow. Public registration creates a regular `user` role. Login uses **email and password**; after successful login the API issues a signed JWT which clients send as `Authorization: Bearer <jwt>`. JWT remains stateless and is not stored in Redis.
+The CD workflow provisions two stable reviewer identities after `scripts/gcp/bootstrap-reviewers.sh` has created their password secrets:
 
-An administrator can be provisioned once through the documented `BOOTSTRAP_ADMIN_*` flow backed by Secret Manager. Do not publish the real reviewer password in this public README: that would contradict the assessment's no-secret requirement and allow automated credential scraping. Share the completed credential handoff privately and give reviewers this public [reviewer flow and provisioning guide](docs/REVIEWER_GUIDE.md).
+- Regular user: `reviewer.user@example.com` (`reviewer-user`)
+- Administrator: `reviewer.admin@example.com` (`reviewer-admin`)
+
+Login uses **email and password**; after successful login the API issues a signed JWT which clients send as `Authorization: Bearer <jwt>`. JWT remains stateless and is not stored in Redis. Public registration still creates a regular `user` role.
+
+Passwords are intentionally absent from Git and GitHub Actions. They are stored in Secret Manager, mounted into Cloud Run, hashed before PostgreSQL storage, and should be sent privately with the [credential handoff template](docs/REVIEWER_GUIDE.md#credential-handoff-template).
 
 ## Continuous Integration
 
@@ -118,14 +122,17 @@ Repository-level GitHub Actions variables required before deployment:
 | `REDIS_ADDR` | Private Memorystore host and port, written by the bootstrap script |
 | `GCP_VPC_NETWORK` | Direct VPC egress network, written by the bootstrap script |
 | `GCP_VPC_SUBNET` | Regional Direct VPC egress subnet, written by the bootstrap script |
+| `REVIEWER_ADMIN_EMAIL` / `REVIEWER_ADMIN_USERNAME` | Optional reviewer identity overrides; workflow defaults are documented above |
+| `REVIEWER_USER_EMAIL` / `REVIEWER_USER_USERNAME` | Optional reviewer identity overrides; workflow defaults are documented above |
+| `REVIEWER_SEED_ENABLED` | Set to `true` by the reviewer bootstrap only after both password secrets are ready |
 
 Required GCP resources and IAM bindings must already exist:
 
 - Enable the Cloud Run, Artifact Registry, Cloud SQL Admin, Secret Manager, IAM Credentials, and Security Token Service APIs.
-- Create the `mygram-containers` Docker repository, Cloud SQL instance/database/user, four Secret Manager secrets, and both service accounts named in the workflow.
+- Create the `mygram-containers` Docker repository, Cloud SQL instance/database/user, six Secret Manager secrets, and both service accounts named in the workflow.
 - Allow the GitHub repository identity in the Workload Identity Provider to impersonate `github-mygram-deployer` with `roles/iam.workloadIdentityUser`.
 - Grant the deployment service account permission to write Artifact Registry images, administer Cloud Run services, and act as `mygram-runtime`.
-- Grant `mygram-runtime` `roles/cloudsql.client` and access to the four named secrets. No service-account JSON key is required or accepted by this workflow.
+- Grant `mygram-runtime` `roles/cloudsql.client` and access to the six named secrets. No service-account JSON key is required or accepted by this workflow.
 
 The workflow references these Google Secret Manager secrets directly from Cloud Run without reading their values in GitHub Actions:
 
@@ -133,6 +140,8 @@ The workflow references these Google Secret Manager secrets directly from Cloud 
 - `mygram-jwt-secret` → `JWT_SECRET`
 - `mygram-s3-access-key` → `S3_ACCESS_KEY_ID`
 - `mygram-s3-secret-key` → `S3_SECRET_ACCESS_KEY`
+- `mygram-bootstrap-admin-password` → `BOOTSTRAP_ADMIN_PASSWORD`
+- `mygram-bootstrap-user-password` → `BOOTSTRAP_USER_PASSWORD`
 
 The database configuration was audited for Cloud Run. GORM's PostgreSQL DSN accepts a Unix socket path, so the API uses `DB_HOST=/cloudsql/mygram-suitmedia-figo-2026:asia-southeast2:mygram-postgres`, `DB_PORT=5432`, and `DB_SSLMODE=disable`. Cloud Run's Cloud SQL integration provides the authenticated and encrypted local proxy connection; the application never connects to a production public database address.
 
@@ -165,6 +174,23 @@ flowchart LR
 `GET /api/v1/photos` first reads `mygram:photos:list:v1`. A cache hit returns the cached list; a miss loads PostgreSQL and stores the result for `REDIS_CACHE_TTL_SECONDS` (60 seconds by default). Successful photo create, update, and delete operations invalidate the key. Redis errors are logged and fail open to PostgreSQL, so Redis is neither the primary database nor a JWT session store. The same Redis instance provides an atomic, shared fixed-window rate limiter across Cloud Run instances; limiter errors also fail open.
 
 Basic Tier is intentionally used as the cost-optimized assessment configuration and is not highly available. A production workload should use Memorystore Standard Tier HA, appropriate capacity and monitoring, and revisit fail-open policy and rate limits based on its threat model.
+
+### Reviewer account bootstrap
+
+After Redis bootstrap, create or rotate the two reviewer passwords from an authenticated Cloud Shell. Input is hidden, password values are written only to Secret Manager, and the script grants the runtime service account access:
+
+```bash
+GITHUB_REPOSITORY=ffigoperdana/mygram-suitmedia-assessment \
+  ./scripts/gcp/bootstrap-reviewers.sh
+```
+
+After both secrets and identity variables succeed, the script sets `REVIEWER_SEED_ENABLED=true`. The next green CD deployment creates missing reviewer rows or reconciles their password hash, active status, and administrator role. Before that flag exists, CD safely deploys without referencing missing reviewer secrets. The operation is idempotent; rerunning it creates new Secret Manager versions without exposing their values in logs.
+
+### One-time load-test evidence
+
+The manual [`Load Test - Production`](.github/workflows/load-test.yml) workflow uses pinned `grafana/k6:1.6.1` and never runs on push. Run `smoke`, then `normal` (100 VUs), and finally run `peak` once with confirmation `RUN_1500_CCU`. Peak ramps to and holds 1,500 concurrent virtual users, using 70% frontend root traffic, 20% API liveness, and 10% API readiness with a 1–3 second user think time. The readiness preflight requires both PostgreSQL and Redis to report `connected`.
+
+The pass thresholds are request failures below 1%, checks above 99%, p95 below 1.5 seconds, and p99 below 3 seconds. GitHub uploads the k6 JSON summary and console output for 30 days. This is infrastructure-capacity evidence for the deployed frontend, API, Cloud SQL, and Redis path; it is not a substitute for a separate authenticated business-transaction benchmark.
 
 Reviewer access, user/admin flows, and secure one-time admin provisioning are documented in [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md). Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Media storage remains Garage S3 rather than Google Cloud Storage.
 

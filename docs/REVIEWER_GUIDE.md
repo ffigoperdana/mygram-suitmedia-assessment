@@ -38,42 +38,25 @@ New public registrations always receive the `user` role. A user cannot assign th
 
 ## Bootstrap account status
 
-The application supports optional `BOOTSTRAP_ADMIN_*` and `BOOTSTRAP_USER_*` environment variables. The Cloud Run CD workflow deliberately does not set them, so a normal deployment does not create hard-coded or publicly documented accounts.
+The Cloud Run CD workflow supplies these public reviewer identities:
 
-When all bootstrap identity fields are blank, startup skips account creation. When a complete bootstrap identity is supplied, startup creates the account if it does not exist. Passwords are hashed by the model hook before storage. For an existing matching account, bootstrap can restore active status and ensure the admin role, but it does not replace that account's password.
+- Regular user: `reviewer.user@example.com` (`reviewer-user`)
+- Administrator: `reviewer.admin@example.com` (`reviewer-admin`)
 
-## Secure one-time administrator provisioning
+Their passwords are not in GitHub or this guide. `scripts/gcp/bootstrap-reviewers.sh` stores them in `mygram-bootstrap-user-password` and `mygram-bootstrap-admin-password` in Secret Manager, and Cloud Run references the secrets without GitHub Actions reading their values.
 
-Use a dedicated Secret Manager secret and never commit the password. The following is an operator procedure, not a command for reviewers to run.
+On API startup, a missing reviewer row is created and its password is hashed before PostgreSQL storage. An existing matching account is reconciled to the latest secret password, restored to active status, and—only for the administrator—assigned the `admin` role. This makes password rotation deterministic while keeping the application database as the RBAC source of truth.
 
-1. Create `mygram-bootstrap-admin-password` in Secret Manager, add a strong unique password as its current version, and grant `mygram-runtime@mygram-suitmedia-figo-2026.iam.gserviceaccount.com` Secret Accessor on that secret.
-2. Choose an email and username used only for assessment review.
-3. Temporarily update `mygram-api`:
+## Secure reviewer provisioning
 
-   ```bash
-   gcloud run services update mygram-api \
-     --project=mygram-suitmedia-figo-2026 \
-     --region=asia-southeast2 \
-     --update-env-vars=BOOTSTRAP_ADMIN_EMAIL=reviewer-admin@example.com,BOOTSTRAP_ADMIN_USERNAME=reviewer-admin,BOOTSTRAP_ADMIN_AGE=21 \
-     --update-secrets=BOOTSTRAP_ADMIN_PASSWORD=mygram-bootstrap-admin-password:latest
-   ```
+Use the repository script from an authenticated Cloud Shell. It prompts twice with hidden input, requires at least 12 characters, creates or versions both secrets, grants the runtime identity access, sets the GitHub identity variables, and finally sets `REVIEWER_SEED_ENABLED=true`:
 
-4. Wait for the revision to become ready and verify one successful login.
-5. Remove the temporary bootstrap inputs. The database account remains:
+```bash
+GITHUB_REPOSITORY=ffigoperdana/mygram-suitmedia-assessment \
+  ./scripts/gcp/bootstrap-reviewers.sh
+```
 
-   ```bash
-   gcloud run services update mygram-api \
-     --project=mygram-suitmedia-figo-2026 \
-     --region=asia-southeast2 \
-     --remove-env-vars=BOOTSTRAP_ADMIN_EMAIL,BOOTSTRAP_ADMIN_USERNAME,BOOTSTRAP_ADMIN_AGE \
-     --remove-secrets=BOOTSTRAP_ADMIN_PASSWORD
-   ```
-
-6. Share the email and password through a private channel or password manager, never through the repository, a public issue, screenshots, or build logs.
-7. Remove the runtime service account's access to the bootstrap secret and delete the secret when it is no longer required.
-8. Delete or ban the reviewer accounts after the assessment if continued public access is unnecessary.
-
-The next CD deployment also reconciles the API environment and secrets to the workflow's declared production configuration, which does not contain bootstrap credentials.
+Then manually dispatch `CD - Cloud Run` or push the committed deployment configuration. Verify both logins after the CD job is green. Share the two passwords through a private channel or password manager, and delete or ban the accounts after the review if continued public access is unnecessary.
 
 ## Credential handoff template
 
@@ -86,11 +69,11 @@ Application: https://mygram-web-734925981385.asia-southeast2.run.app
 Public API documentation: https://mygram-web-734925981385.asia-southeast2.run.app/docs
 
 Regular reviewer account
-Email: <share privately>
+Email: reviewer.user@example.com
 Password: <share privately>
 
 Administrator reviewer account
-Email: <share privately>
+Email: reviewer.admin@example.com
 Password: <share privately>
 
 Suggested flow:

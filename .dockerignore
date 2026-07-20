@@ -46,6 +46,7 @@ secrets/
 *_test.go
 test/
 coverage.out
+load-test-results/
 
 # Temporary files
 tmp/

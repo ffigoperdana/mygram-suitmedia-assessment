@@ -16,6 +16,24 @@ for command_name in gcloud gh; do
   fi
 done
 
+retry() {
+  local max_attempts="$1"
+  shift
+  local attempt=1
+  local delay_seconds=2
+
+  until "$@"; do
+    if (( attempt >= max_attempts )); then
+      echo "Command failed after ${attempt} attempts: $*" >&2
+      return 1
+    fi
+    echo "Command failed (attempt ${attempt}/${max_attempts}); retrying in ${delay_seconds}s..." >&2
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+    delay_seconds=$((delay_seconds * 2))
+  done
+}
+
 gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q . || {
   echo "Authenticate gcloud before running this script." >&2
   exit 1
@@ -92,11 +110,11 @@ if [[ -z "$REDIS_HOST" || -z "$REDIS_PORT" ]]; then
   exit 1
 fi
 
-gh variable set REDIS_ADDR --repo "$REPOSITORY" --body "${REDIS_HOST}:${REDIS_PORT}"
-gh variable set REDIS_HOST --repo "$REPOSITORY" --body "$REDIS_HOST"
-gh variable set REDIS_PORT --repo "$REPOSITORY" --body "$REDIS_PORT"
-gh variable set GCP_VPC_NETWORK --repo "$REPOSITORY" --body "$VPC_NETWORK"
-gh variable set GCP_VPC_SUBNET --repo "$REPOSITORY" --body "$VPC_SUBNET"
+retry 6 gh variable set REDIS_ADDR --repo "$REPOSITORY" --body "${REDIS_HOST}:${REDIS_PORT}"
+retry 6 gh variable set REDIS_HOST --repo "$REPOSITORY" --body "$REDIS_HOST"
+retry 6 gh variable set REDIS_PORT --repo "$REPOSITORY" --body "$REDIS_PORT"
+retry 6 gh variable set GCP_VPC_NETWORK --repo "$REPOSITORY" --body "$VPC_NETWORK"
+retry 6 gh variable set GCP_VPC_SUBNET --repo "$REPOSITORY" --body "$VPC_SUBNET"
 
 echo "Memorystore ${REDIS_INSTANCE} is ready at ${REDIS_HOST}:${REDIS_PORT}."
 echo "GitHub Actions variables were updated for ${REPOSITORY}."

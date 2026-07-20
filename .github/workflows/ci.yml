@@ -99,7 +99,7 @@ jobs:
           GIN_MODE: test
         run: >-
           go test -count=1 -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-unit.out ./...
-          -run '^(Test(HealthEndpointsWithoutDatabase|CORSPreflight|SecurityHeaders|PublicOpenAPISpecFiltersAdminAndLegacyRoutes|SwaggerUI(CanBeDisabled|AllowsSameOriginEmbedding)|MediaProxyRejectsInvalidPathsAndRequiresStorage|ValidateSocialProfileURL|LoadPhotosCacheAside.*|InvalidatePhotoListCache|RedisRateLimit.*))$'
+          -run '^(Test(HealthEndpointsWithoutDatabase|CORSPreflight|SecurityHeaders|PublicOpenAPISpecFiltersAdminAndLegacyRoutes|SwaggerUI(CanBeDisabled|AllowsSameOriginEmbedding)|MediaProxyRejectsInvalidPathsAndRequiresStorage|ValidateSocialProfileURL|LoadPhotosCacheAside.*|InvalidatePhotoListCache|RedisRateLimit.*|BootstrapUserUpdates.*))$'
 
       - name: Print unit-test coverage
         run: go tool cover -func=coverage-unit.out

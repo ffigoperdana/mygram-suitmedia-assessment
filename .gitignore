@@ -34,6 +34,7 @@ coverage.out
 coverage.html
 dist/
 build/
+load-test-results/
 .cache/
 .npm-cache/
 .gocache/

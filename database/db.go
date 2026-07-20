@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"finalproject/config"
+	"finalproject/helpers"
 	"finalproject/models"
 	"fmt"
 	"strings"
@@ -120,7 +121,20 @@ func seedBootstrapUser(
 		return err
 	}
 
+	updates := bootstrapUserUpdates(existing, password, role, ensureRole)
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	return conn.Model(&existing).Updates(updates).Error
+}
+
+func bootstrapUserUpdates(existing models.User, password string, role string, ensureRole bool) map[string]any {
 	updates := map[string]any{}
+	if !helpers.ComparePass([]byte(existing.Password), []byte(password)) {
+		updates["password"] = helpers.HashPass(password)
+	}
 	if ensureRole && existing.Role != role {
 		updates["role"] = role
 	}
@@ -129,10 +143,5 @@ func seedBootstrapUser(
 		updates["banned_at"] = nil
 		updates["ban_reason"] = ""
 	}
-
-	if len(updates) == 0 {
-		return nil
-	}
-
-	return conn.Model(&existing).Updates(updates).Error
+	return updates
 }

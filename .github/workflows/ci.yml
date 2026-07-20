@@ -97,10 +97,9 @@ jobs:
       - name: Run database-independent unit tests with race detector
         env:
           GIN_MODE: test
-          CAP_ENABLED: "false"
         run: >-
           go test -count=1 -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-unit.out ./...
-          -run '^(Test(HealthEndpointsWithoutDatabase|CORSPreflight|SecurityHeaders|PublicOpenAPISpecFiltersAdminAndLegacyRoutes|SwaggerUI(CanBeDisabled|AllowsSameOriginEmbedding)|MediaProxyRejectsInvalidPathsAndRequiresStorage|VerifyCaptcha.*|ValidateSocialProfileURL))$'
+          -run '^(Test(HealthEndpointsWithoutDatabase|CORSPreflight|SecurityHeaders|PublicOpenAPISpecFiltersAdminAndLegacyRoutes|SwaggerUI(CanBeDisabled|AllowsSameOriginEmbedding)|MediaProxyRejectsInvalidPathsAndRequiresStorage|ValidateSocialProfileURL|LoadPhotosCacheAside.*|InvalidatePhotoListCache|RedisRateLimit.*))$'
 
       - name: Print unit-test coverage
         run: go tool cover -func=coverage-unit.out
@@ -130,6 +129,15 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      redis:
+        image: redis:7.4-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
     env:
       GIN_MODE: test
       DB_HOST: localhost
@@ -139,7 +147,12 @@ jobs:
       DB_PORT: "5432"
       DB_SSLMODE: disable
       REQUIRE_TEST_DATABASE: "true"
-      CAP_ENABLED: "false"
+      REDIS_ENABLED: "true"
+      REDIS_ADDR: localhost:6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      REDIS_CACHE_TTL_SECONDS: "60"
+      REQUIRE_TEST_REDIS: "true"
       S3_ENDPOINT: ""
       S3_BUCKET: ""
       S3_ACCESS_KEY_ID: ""
@@ -164,6 +177,9 @@ jobs:
         run: >-
           go test -count=1 -covermode=atomic -coverpkg=./... -coverprofile=coverage-integration.out .
           -run '^(Test(UserRegistrationLoginAndValidation|AuthenticationMiddleware|CurrentUserAndAdminRBAC|PushSubscriptionRoutes|PhotoEndpointsAndOwnership|PhotoImageUploadValidationAndStorageConfig|CommentEndpointsAndOwnership|SocialMediaEndpointsAndOwnership|ReadinessWithDatabase))$'
+
+      - name: Run Redis-backed integration tests
+        run: go test -count=1 ./services -run '^TestRedisPhotoCacheIntegration$'
 
       - name: Print integration-test coverage
         run: go tool cover -func=coverage-integration.out
@@ -227,7 +243,7 @@ jobs:
       DB_PORT: "5432"
       DB_SSLMODE: disable
       CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
-      CAP_ENABLED: "false"
+      REDIS_ENABLED: "false"
       PUBLIC_OPENAPI_ENABLED: "true"
       SWAGGER_UI_MODE: internal
       S3_ENDPOINT: ""
@@ -235,7 +251,6 @@ jobs:
       S3_ACCESS_KEY_ID: ""
       S3_SECRET_ACCESS_KEY: ""
       VITE_API_BASE_URL: http://127.0.0.1:8080
-      VITE_CAP_ENABLED: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -339,6 +354,5 @@ jobs:
           tags: mygram-web:ci
           build-args: |
             VITE_API_BASE_URL=http://127.0.0.1:8080
-            VITE_CAP_ENABLED=false
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,scope=frontend,mode=max

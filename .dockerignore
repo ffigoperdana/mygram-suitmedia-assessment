@@ -50,6 +50,9 @@ coverage.out
 # Temporary files
 tmp/
 temp/
+.gocache/
+.gopath/
+.gomodcache/
 
 # Build artifacts (if any)
 dist/

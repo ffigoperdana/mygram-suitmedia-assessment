@@ -601,7 +601,6 @@ func configureTestEnv(t *testing.T) {
 	setTestEnvDefault(t, "JWT_SECRET", "test-secret-that-is-long-enough-for-mygram")
 	setTestEnvDefault(t, "JWT_EXPIRATION_HOURS", "24")
 	setTestEnvDefault(t, "CORS_ALLOWED_ORIGINS", "http://localhost:3000")
-	setTestEnvDefault(t, "CAP_ENABLED", "false")
 	setTestEnvDefault(t, "PUBLIC_OPENAPI_ENABLED", "true")
 	setTestEnvDefault(t, "SWAGGER_UI_MODE", "internal")
 	setTestEnvDefault(t, "S3_ENDPOINT", " ")

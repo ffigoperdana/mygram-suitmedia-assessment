@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"errors"
-	"finalproject/config"
 	"finalproject/database"
 	"finalproject/helpers"
 	"finalproject/models"
@@ -16,17 +15,15 @@ import (
 )
 
 type LoginRequest struct {
-	Email        string `json:"email" form:"email"`
-	Password     string `json:"password" form:"password"`
-	CaptchaToken string `json:"captcha_token,omitempty" form:"captcha_token"`
+	Email    string `json:"email" form:"email"`
+	Password string `json:"password" form:"password"`
 }
 
 type RegisterRequest struct {
-	Username     string `json:"username" form:"username"`
-	Email        string `json:"email" form:"email"`
-	Password     string `json:"password" form:"password"`
-	Age          int    `json:"age" form:"age"`
-	CaptchaToken string `json:"captcha_token,omitempty" form:"captcha_token"`
+	Username string `json:"username" form:"username"`
+	Email    string `json:"email" form:"email"`
+	Password string `json:"password" form:"password"`
+	Age      int    `json:"age" form:"age"`
 }
 
 type ProfileUpdateRequest struct {
@@ -57,18 +54,12 @@ func UserRegister(c *gin.Context) {
 		return
 	}
 
-	cfg := config.Load()
 	request := RegisterRequest{}
 	if err := helpers.BindRequest(c, &request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Bad Request",
 			"message": err.Error(),
 		})
-		return
-	}
-
-	if err := helpers.VerifyCaptchaToken(cfg, request.CaptchaToken); err != nil {
-		handleCaptchaError(c, err)
 		return
 	}
 
@@ -121,7 +112,6 @@ func UserLogin(c *gin.Context) {
 		return
 	}
 
-	cfg := config.Load()
 	request := LoginRequest{}
 	if err := helpers.BindRequest(c, &request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -137,13 +127,6 @@ func UserLogin(c *gin.Context) {
 			"message": "email and password are required",
 		})
 		return
-	}
-
-	if cfg.CapEnabled && cfg.CapRequiredOnLogin {
-		if err := helpers.VerifyCaptchaToken(cfg, request.CaptchaToken); err != nil {
-			handleCaptchaError(c, err)
-			return
-		}
 	}
 
 	user := models.User{}
@@ -338,17 +321,4 @@ func buildProfileUpdates(request ProfileUpdateRequest) (map[string]interface{}, 
 	}
 
 	return updates, nil
-}
-
-func handleCaptchaError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, helpers.ErrCaptchaRequired), errors.Is(err, helpers.ErrCaptchaFailed):
-		jsonError(c, http.StatusBadRequest, "Bad Request", err.Error())
-	case errors.Is(err, helpers.ErrCaptchaNotConfigured):
-		jsonError(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
-	case errors.Is(err, helpers.ErrCaptchaUnavailable):
-		jsonError(c, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
-	default:
-		jsonError(c, http.StatusBadRequest, "Bad Request", err.Error())
-	}
 }

@@ -21,6 +21,21 @@ services:
       - mygram
     restart: unless-stopped
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: mygram-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mygram
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -40,6 +55,14 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       PUBLIC_OPENAPI_ENABLED: ${PUBLIC_OPENAPI_ENABLED:-true}
       SWAGGER_UI_MODE: ${SWAGGER_UI_MODE:-internal}
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-60}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-120}
+      AUTH_RATE_LIMIT_REQUESTS: ${AUTH_RATE_LIMIT_REQUESTS:-10}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-garage}
       S3_BUCKET: ${S3_BUCKET:-}
@@ -52,6 +75,8 @@ services:
       - "${API_PORT:-8080}:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/mygram", "health"]
@@ -69,10 +94,6 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8080}
-        VITE_CAP_ENABLED: ${VITE_CAP_ENABLED:-false}
-        VITE_CAP_BASE_URL: ${VITE_CAP_BASE_URL:-}
-        VITE_CAP_SITE_KEY: ${VITE_CAP_SITE_KEY:-}
-        VITE_CAP_REQUIRED_ON_LOGIN: ${VITE_CAP_REQUIRED_ON_LOGIN:-true}
     container_name: mygram-web
     ports:
       - "${FRONTEND_PORT:-3000}:80"

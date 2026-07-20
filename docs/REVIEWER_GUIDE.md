@@ -12,7 +12,7 @@ This guide is safe to keep in the public repository. It documents access and exp
 
 The public OpenAPI document excludes `/api/v1/admin/*`. Administrative routes still require a valid JWT for a user with the `admin` role.
 
-This is an assessment deployment rather than a hardened customer-production environment. HTTPS, security headers, RBAC, password hashing, Secret Manager, and Cloud SQL's authenticated socket are enabled. CAPTCHA and distributed rate limiting are currently disabled, so public registration should use disposable review accounts and the service should not receive real personal or confidential data.
+This is an assessment deployment rather than a hardened customer-production environment. HTTPS, security headers, RBAC, password hashing, Secret Manager, and Cloud SQL's authenticated socket are enabled. Redis-backed distributed rate limiting is enabled only after the Memorystore bootstrap and a successful CD run; it deliberately fails open during Redis outages, so public registration should use disposable review accounts and the service should not receive real personal or confidential data.
 
 ## Regular user flow
 

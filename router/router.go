@@ -5,6 +5,7 @@ import (
 	"finalproject/controllers"
 	"finalproject/middlewares"
 	"finalproject/models"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,8 +36,8 @@ func StartApp() *gin.Engine {
 
 	registerHealthRoutes(r)
 	registerMediaRoutes(r)
-	registerLegacyRoutes(r)
-	registerV1Routes(r.Group("/api/v1"))
+	registerLegacyRoutes(r, cfg)
+	registerV1Routes(r.Group("/api/v1"), cfg)
 	registerDocsRoutes(r, cfg)
 
 	return r
@@ -53,8 +54,19 @@ func registerMediaRoutes(r *gin.Engine) {
 	r.HEAD("/media/*objectKey", controllers.ServeMediaObject)
 }
 
-func registerLegacyRoutes(r *gin.Engine) {
+func registerLegacyRoutes(r *gin.Engine, cfg config.Config) {
+	standardLimit := middlewares.RedisRateLimit(
+		"legacy-api",
+		cfg.RateLimitRequests,
+		time.Duration(cfg.RateLimitWindowSeconds)*time.Second,
+	)
+
 	userRouter := r.Group("/users")
+	userRouter.Use(middlewares.RedisRateLimit(
+		"legacy-auth",
+		cfg.AuthRateLimitRequests,
+		time.Duration(cfg.RateLimitWindowSeconds)*time.Second,
+	))
 	{
 		userRouter.POST("/register", controllers.UserRegister)
 		userRouter.POST("/login", controllers.UserLogin)
@@ -62,7 +74,7 @@ func registerLegacyRoutes(r *gin.Engine) {
 
 	photoRouter := r.Group("/photos")
 	{
-		photoRouter.Use(middlewares.Authentication())
+		photoRouter.Use(standardLimit, middlewares.Authentication())
 		photoRouter.POST("/create", controllers.CreatePhoto)
 		photoRouter.GET("/getall", controllers.GetAllPhotos)
 		photoRouter.GET("/get/:photoId", controllers.GetPhoto)
@@ -72,7 +84,7 @@ func registerLegacyRoutes(r *gin.Engine) {
 
 	commentRouter := r.Group("/comments")
 	{
-		commentRouter.Use(middlewares.Authentication())
+		commentRouter.Use(standardLimit, middlewares.Authentication())
 		commentRouter.POST("/create/:photoId", controllers.CreateComment)
 		commentRouter.GET("/getall", controllers.GetAllComments)
 		commentRouter.GET("/getall/:photoId", controllers.GetAllCommentsForPhoto)
@@ -83,7 +95,7 @@ func registerLegacyRoutes(r *gin.Engine) {
 
 	socmedRouter := r.Group("/socialmedia")
 	{
-		socmedRouter.Use(middlewares.Authentication())
+		socmedRouter.Use(standardLimit, middlewares.Authentication())
 		socmedRouter.POST("/create", controllers.CreateSocialMedia)
 		socmedRouter.GET("/getall", controllers.GetAllSocialMedias)
 		socmedRouter.GET("/get/:socialMediaId", controllers.GetSocialMedia)
@@ -92,8 +104,19 @@ func registerLegacyRoutes(r *gin.Engine) {
 	}
 }
 
-func registerV1Routes(api *gin.RouterGroup) {
+func registerV1Routes(api *gin.RouterGroup, cfg config.Config) {
+	api.Use(middlewares.RedisRateLimit(
+		"api-v1",
+		cfg.RateLimitRequests,
+		time.Duration(cfg.RateLimitWindowSeconds)*time.Second,
+	))
+
 	authRouter := api.Group("/auth")
+	authRouter.Use(middlewares.RedisRateLimit(
+		"auth-v1",
+		cfg.AuthRateLimitRequests,
+		time.Duration(cfg.RateLimitWindowSeconds)*time.Second,
+	))
 	{
 		authRouter.POST("/register", controllers.UserRegister)
 		authRouter.POST("/login", controllers.UserLogin)

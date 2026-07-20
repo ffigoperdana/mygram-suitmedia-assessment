@@ -74,8 +74,6 @@ definitions:
     type: object
   controllers.LoginRequest:
     properties:
-      captcha_token:
-        type: string
       email:
         type: string
       password:
@@ -121,8 +119,6 @@ definitions:
     properties:
       age:
         type: integer
-      captcha_token:
-        type: string
       email:
         type: string
       password:
@@ -216,6 +212,29 @@ definitions:
       userID:
         type: integer
     type: object
+  models.PushSubscription:
+    properties:
+      auth:
+        type: string
+      created_at:
+        type: string
+      endpoint:
+        type: string
+      id:
+        type: integer
+      last_used_at:
+        type: string
+      p256dh:
+        type: string
+      updated_at:
+        type: string
+      user:
+        $ref: '#/definitions/models.User'
+      user_agent:
+        type: string
+      user_id:
+        type: integer
+    type: object
   models.SocialMedia:
     properties:
       created_at:
@@ -258,6 +277,10 @@ definitions:
       photos:
         items:
           $ref: '#/definitions/models.Photo'
+        type: array
+      push_subscriptions:
+        items:
+          $ref: '#/definitions/models.PushSubscription'
         type: array
       role:
         type: string

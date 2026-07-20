@@ -3135,9 +3135,6 @@ const docTemplate = `{
         "controllers.LoginRequest": {
             "type": "object",
             "properties": {
-                "captcha_token": {
-                    "type": "string"
-                },
                 "email": {
                     "type": "string"
                 },
@@ -3206,9 +3203,6 @@ const docTemplate = `{
             "properties": {
                 "age": {
                     "type": "integer"
-                },
-                "captcha_token": {
-                    "type": "string"
                 },
                 "email": {
                     "type": "string"
@@ -3353,6 +3347,41 @@ const docTemplate = `{
                 }
             }
         },
+        "models.PushSubscription": {
+            "type": "object",
+            "properties": {
+                "auth": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "p256dh": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user": {
+                    "$ref": "#/definitions/models.User"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "models.SocialMedia": {
             "type": "object",
             "properties": {
@@ -3416,6 +3445,12 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/models.Photo"
+                    }
+                },
+                "push_subscriptions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.PushSubscription"
                     }
                 },
                 "role": {

@@ -11,17 +11,12 @@ import {
 import { toast } from "sonner";
 
 import { getApiErrorMessage } from "@/api/http";
-import { CapCaptcha } from "@/components/auth/CapCaptcha";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRegister } from "@/hooks/use-auth";
 import { useDocumentTitle } from "@/hooks/use-document-title";
-
-function shouldRequireRegisterCaptcha() {
-  return import.meta.env.VITE_CAP_ENABLED === "true";
-}
 
 export function RegisterPage() {
   useDocumentTitle("Register | MyGram");
@@ -31,9 +26,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [age, setAge] = useState("18");
-  const [captchaToken, setCaptchaToken] = useState("");
-  const captchaRequired = shouldRequireRegisterCaptcha();
-  const submitDisabled = register.isPending || (captchaRequired && !captchaToken);
+  const submitDisabled = register.isPending;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,7 +37,6 @@ export function RegisterPage() {
         email,
         password,
         age: Number(age),
-        captcha_token: captchaToken || undefined,
       });
       toast.success("Account created");
       navigate("/login");
@@ -74,11 +66,7 @@ export function RegisterPage() {
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">
                 <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span>
-                {captchaRequired
-                  ? "New accounts are protected by captcha before they reach the API."
-                  : "Passwords are hashed before account data is stored."}
-              </span>
+              <span>Passwords are hashed before account data is stored.</span>
             </div>
           </div>
         </section>
@@ -165,9 +153,6 @@ export function RegisterPage() {
                 />
               </div>
             </div>
-            {captchaRequired ? (
-              <CapCaptcha value={captchaToken} onChange={setCaptchaToken} />
-            ) : null}
             <Button type="submit" className="h-11 gap-2" disabled={submitDisabled}>
               {register.isPending ? "Creating" : "Create account"}
               {!register.isPending ? (

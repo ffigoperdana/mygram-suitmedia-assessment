@@ -13,7 +13,6 @@ React + Vite + TypeScript frontend for the MyGram backend API.
 ## Implemented Areas
 
 - Register, login, logout, persisted session, `/api/v1/me`, and banned-session handling
-- Optional Cap captcha on register/login using frontend-safe `VITE_CAP_*` values
 - Feed with search/filter, photo detail, comments, social links, and editable profile pages
 - RBAC-aware navigation and admin-only route guard
 - Admin dashboard with stats, user filtering, edit, ban, unban, and delete actions
@@ -33,13 +32,7 @@ Create `.env` from `.env.example` and set:
 ```bash
 VITE_API_BASE_URL=http://localhost:8080
 VITE_USE_SAME_ORIGIN_API=false
-VITE_CAP_ENABLED=false
-VITE_CAP_BASE_URL=https://cap.fgdev.tech
-VITE_CAP_SITE_KEY=replace-with-cap-site-key
-VITE_CAP_REQUIRED_ON_LOGIN=true
 ```
-
-Use `VITE_CAP_ENABLED=true` only after the backend also has the matching Cap secret configured.
 
 For production, set `VITE_USE_SAME_ORIGIN_API=true` when the frontend Nginx container proxies same-origin `/api/*` requests to the backend service. Use a full `https://api...` URL only after that API subdomain's TLS/proxy route is verified.
 

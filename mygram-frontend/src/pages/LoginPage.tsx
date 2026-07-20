@@ -13,7 +13,6 @@ import {
 import { toast } from "sonner";
 
 import { getApiErrorMessage } from "@/api/http";
-import { CapCaptcha } from "@/components/auth/CapCaptcha";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,13 +20,6 @@ import { Label } from "@/components/ui/label";
 import { useLogin } from "@/hooks/use-auth";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { useAuthStore } from "@/stores/auth-store";
-
-function shouldRequireLoginCaptcha() {
-  return (
-    import.meta.env.VITE_CAP_ENABLED === "true" &&
-    import.meta.env.VITE_CAP_REQUIRED_ON_LOGIN !== "false"
-  );
-}
 
 export function LoginPage() {
   useDocumentTitle("Login | MyGram");
@@ -39,9 +31,7 @@ export function LoginPage() {
   const setNotice = useAuthStore((state) => state.setNotice);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [captchaToken, setCaptchaToken] = useState("");
-  const captchaRequired = shouldRequireLoginCaptcha();
-  const submitDisabled = login.isPending || (captchaRequired && !captchaToken);
+  const submitDisabled = login.isPending;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,7 +41,6 @@ export function LoginPage() {
       const response = await login.mutateAsync({
         email,
         password,
-        captcha_token: captchaToken || undefined,
       });
       setSession(response.token, response.user);
       const redirectTo = (location.state as { from?: { pathname?: string } } | null)?.from
@@ -85,11 +74,7 @@ export function LoginPage() {
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">
                   <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                 </span>
-                <span>
-                  {captchaRequired
-                    ? "Captcha-protected auth with role-aware access."
-                    : "Role-aware access with securely hashed passwords."}
-                </span>
+                <span>Role-aware access with securely hashed passwords.</span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-card text-primary shadow-sm">
@@ -160,9 +145,6 @@ export function LoginPage() {
                 />
               </div>
             </div>
-            {captchaRequired ? (
-              <CapCaptcha value={captchaToken} onChange={setCaptchaToken} />
-            ) : null}
             <Button type="submit" className="h-11 gap-2" disabled={submitDisabled}>
               {login.isPending ? "Signing in" : "Sign in"}
               {!login.isPending ? <ArrowRight className="h-4 w-4" aria-hidden="true" /> : null}

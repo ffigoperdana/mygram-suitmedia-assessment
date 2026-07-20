@@ -17,13 +17,15 @@ flowchart LR
     BSA[backend-static-analysis]
     FSA[frontend-static-analysis]
     BUT[backend-unit-test]
-    BIT[backend-integration-test\nPostgreSQL service]
+    BIT[backend-integration-test\nPostgreSQL + Redis services]
     FUT[frontend-unit-test]
     E2E[end-to-end-test\nmocked UI + real stack]
     DB[(ephemeral PostgreSQL)]
+    REDIS[(ephemeral Redis)]
     BUILD[docker-build\nBuildKit cache, no push]
 
     DB --> BIT
+    REDIS --> BIT
     DB --> E2E
     BSA --> BUILD
     FSA --> BUILD
@@ -38,7 +40,7 @@ flowchart LR
 | Backend static analysis | `backend-static-analysis` | `gofmt` check, `go vet ./...`, and golangci-lint |
 | Frontend static analysis | `frontend-static-analysis` | clean `npm ci`, TypeScript typecheck, and ESLint |
 | Backend unit test | `backend-unit-test` | database-independent tests with the race detector and uploaded coverage profile |
-| Backend integration test | `backend-integration-test` | API/controller tests against an ephemeral PostgreSQL 15 service; CI fails if the database cannot be reached |
+| Backend integration test | `backend-integration-test` | API/controller tests against ephemeral PostgreSQL 15 and Redis services; CI never connects to Cloud SQL or Memorystore production |
 | Frontend unit test | `frontend-unit-test` | Vitest suite after a clean `npm ci` |
 | End-to-end test | `end-to-end-test` | Playwright Chromium suites plus reports uploaded on failure |
 | Backend and frontend container build | `docker-build` | both Dockerfiles built with BuildKit GitHub Actions cache after all quality/test jobs pass; images are not pushed |
@@ -59,7 +61,8 @@ Deployment order:
 ```mermaid
 flowchart LR
     AUTH[WIF authentication] --> APIIMAGE[Build and push API\ncommit SHA tag]
-    APIIMAGE --> API[Deploy mygram-api\nCloud SQL + Secret Manager]
+    APIIMAGE --> API[Deploy mygram-api\nCloud SQL + Secret Manager + Direct VPC]
+    API --> REDIS[(Memorystore Redis)]
     API --> APIURL[Read API URL]
     APIURL --> WEBIMAGE[Build and push frontend\nVITE_API_BASE_URL=API URL]
     WEBIMAGE --> WEB[Deploy mygram-web]
@@ -74,6 +77,9 @@ Repository-level GitHub Actions variables required before deployment:
 | `GARAGE_S3_ENDPOINT` | Garage S3-compatible endpoint |
 | `GARAGE_S3_REGION` | Garage region passed to the AWS SDK |
 | `GARAGE_S3_BUCKET` | Garage bucket used for MyGram media |
+| `REDIS_ADDR` | Private Memorystore host and port, written by the bootstrap script |
+| `GCP_VPC_NETWORK` | Direct VPC egress network, written by the bootstrap script |
+| `GCP_VPC_SUBNET` | Regional Direct VPC egress subnet, written by the bootstrap script |
 
 Required GCP resources and IAM bindings must already exist:
 
@@ -96,7 +102,33 @@ The frontend Nginx upstream is runtime-configurable through `API_UPSTREAM`. It d
 
 Both images use the full Git commit SHA as the Artifact Registry tag. The same `gcloud run deploy` commands create the services on their first run and update them on later runs. Concurrent production deployments share one concurrency group, so a newer commit cancels an older in-progress deployment. Deployment fails if the frontend root or any API health endpoint is unavailable.
 
-Reviewer access, user/admin flows, and secure one-time admin provisioning are documented in [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md). Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Redis is not part of this deployment, and media storage remains Garage S3 rather than Google Cloud Storage.
+### Memorystore Redis
+
+The CD configuration is prepared for a private Memorystore connection, but Redis must not be described as active until `scripts/gcp/bootstrap-redis.sh` has completed and the subsequent CD workflow is green. The idempotent bootstrap enables the required APIs, creates a custom regional subnet when absent, creates a 1 GB Basic Tier instance named `mygram-redis`, and writes `REDIS_HOST`, `REDIS_PORT`, combined `REDIS_ADDR`, `GCP_VPC_NETWORK`, and `GCP_VPC_SUBNET` as GitHub Actions variables through `gh`.
+
+Run the bootstrap once from Google Cloud Shell or another Bash environment authenticated to both `gcloud` and `gh`, from the repository root:
+
+```bash
+GITHUB_REPOSITORY=ffigoperdana/mygram-suitmedia-assessment \
+  ./scripts/gcp/bootstrap-redis.sh
+```
+
+The command is safe to re-run: it describes each resource before creating it and updates the GitHub variables to the current Memorystore endpoint. It creates a billable GCP resource. After it completes, push the application commit or manually dispatch `CD - Cloud Run`; only a green CD run whose readiness payload reports `redis: connected` proves that Redis is active.
+
+```mermaid
+flowchart LR
+    WEB[Cloud Run mygram-web] --> API[Cloud Run mygram-api]
+    API -->|GET /api/v1/photos cache-aside| REDIS[(Memorystore Redis)]
+    API -->|cache miss or Redis unavailable| SQL[(Cloud SQL PostgreSQL)]
+    API -->|photo create/update/delete invalidation| REDIS
+    API -->|photo media| GARAGE[(Garage S3)]
+```
+
+`GET /api/v1/photos` first reads `mygram:photos:list:v1`. A cache hit returns the cached list; a miss loads PostgreSQL and stores the result for `REDIS_CACHE_TTL_SECONDS` (60 seconds by default). Successful photo create, update, and delete operations invalidate the key. Redis errors are logged and fail open to PostgreSQL, so Redis is neither the primary database nor a JWT session store. The same Redis instance provides an atomic, shared fixed-window rate limiter across Cloud Run instances; limiter errors also fail open.
+
+Basic Tier is intentionally used as the cost-optimized assessment configuration and is not highly available. A production workload should use Memorystore Standard Tier HA, appropriate capacity and monitoring, and revisit fail-open policy and rate limits based on its threat model.
+
+Reviewer access, user/admin flows, and secure one-time admin provisioning are documented in [docs/REVIEWER_GUIDE.md](docs/REVIEWER_GUIDE.md). Rollback procedures are documented in [docs/ROLLBACK.md](docs/ROLLBACK.md). Media storage remains Garage S3 rather than Google Cloud Storage.
 
 ## Current Backend Features
 
@@ -104,7 +136,7 @@ Reviewer access, user/admin flows, and secure one-time admin provisioning are do
 - Password hashing with bcrypt
 - JWT authentication with 24 hour token expiration
 - RBAC with `user` and `admin` roles
-- Optional Cap captcha verification for registration/login
+- Redis cache-aside for the photo list and distributed rate limiting, both fail-open
 - Admin dashboard API for stats, user listing, user updates, ban/unban, and delete
 - Photo CRUD with ownership authorization
 - Authenticated image upload to S3-compatible object storage for photo media
@@ -206,11 +238,14 @@ CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 PUBLIC_OPENAPI_ENABLED=true
 SWAGGER_UI_MODE=internal
 
-CAP_ENABLED=false
-CAP_BASE_URL=https://cap.fgdev.tech
-CAP_SITE_KEY=replace-with-cap-site-key
-CAP_SECRET_KEY=replace-with-cap-secret-key
-CAP_REQUIRED_ON_LOGIN=true
+REDIS_ENABLED=false
+REDIS_ADDR=localhost:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+REDIS_CACHE_TTL_SECONDS=60
+RATE_LIMIT_REQUESTS=120
+AUTH_RATE_LIMIT_REQUESTS=10
+RATE_LIMIT_WINDOW_SECONDS=60
 
 S3_ENDPOINT=https://s3.fgdev.tech
 S3_REGION=garage
@@ -258,7 +293,7 @@ Local Docker is optional. The preferred Docker verification path is GitHub Actio
 docker compose -f docker-compose.fullstack.yml --env-file .env up --build
 ```
 
-The active production compose file is `docker-compose.prod.yml`. Older Redis/test compose files were removed so there is only one optional local fullstack compose and one Coolify production compose.
+The active production compose file is `docker-compose.prod.yml`. The optional local fullstack compose starts a local Redis container for development only; Cloud Run never runs Redis as a container.
 
 Expected local URLs:
 

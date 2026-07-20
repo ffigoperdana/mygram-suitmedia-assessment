@@ -1,7 +1,9 @@
 package controllers
 
 import (
+	"context"
 	"finalproject/database"
+	"finalproject/services"
 	"net/http"
 	"time"
 
@@ -71,11 +73,22 @@ func ReadinessCheck(c *gin.Context) {
 		return
 	}
 
+	redisStatus := "disabled"
+	if redisStore := services.GetRedisStore(); redisStore != nil {
+		redisStatus = "connected"
+		redisContext, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		if err := redisStore.Ping(redisContext); err != nil {
+			redisStatus = "degraded"
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":    "ready",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"service":   "mygram-api",
 		"database":  "connected",
+		"redis":     redisStatus,
 		"version":   "1.0.0",
 	})
 }

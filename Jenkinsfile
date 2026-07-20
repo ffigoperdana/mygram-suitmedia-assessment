@@ -11,10 +11,6 @@ pipeline {
         string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional image tag. Defaults to git SHA.')
         string(name: 'PUBLIC_API_BASE_URL', defaultValue: '', description: 'Frontend build-time API URL. Leave empty for same-origin /api proxy in production.')
         booleanParam(name: 'USE_SAME_ORIGIN_API', defaultValue: true, description: 'Use the frontend Nginx /api proxy instead of a separate API subdomain.')
-        booleanParam(name: 'CAP_ENABLED', defaultValue: true, description: 'Enable Cap captcha in the production frontend build.')
-        string(name: 'CAP_BASE_URL', defaultValue: 'https://cap.fgdev.tech', description: 'Frontend Cap captcha base URL.')
-        string(name: 'CAP_SITE_KEY', defaultValue: '8d1607b07b', description: 'Frontend Cap captcha site key. Required when CAP_ENABLED=true.')
-        booleanParam(name: 'CAP_REQUIRED_ON_LOGIN', defaultValue: true, description: 'Require Cap captcha on the login form.')
         string(name: 'GHCR_OWNER_REPO', defaultValue: 'ghcr.io/ffigoperdana/mygram', description: 'Required when PUSH_IMAGES=true, for example ghcr.io/owner/mygram.')
         booleanParam(name: 'DEPLOY_TO_COOLIFY', defaultValue: true, description: 'Trigger Coolify redeploy after pushing main images. Requires Jenkins secret text credential coolify-api-token.')
         string(name: 'COOLIFY_BASE_URL', defaultValue: 'http://127.0.0.1:8000', description: 'Coolify base URL from the Docker host network used by the deploy trigger.')
@@ -28,10 +24,6 @@ pipeline {
         FRONTEND_LOCAL_IMAGE = 'mygram-web:jenkins'
         CI_JWT_SECRET = 'ci-jwt-secret-that-is-long-enough-for-mygram'
         DEFAULT_PUBLIC_API_BASE_URL = ''
-        DEFAULT_CAP_ENABLED = 'true'
-        DEFAULT_CAP_BASE_URL = 'https://cap.fgdev.tech'
-        DEFAULT_CAP_SITE_KEY = '8d1607b07b'
-        DEFAULT_CAP_REQUIRED_ON_LOGIN = 'true'
         DEFAULT_GHCR_OWNER_REPO = 'ghcr.io/ffigoperdana/mygram'
         DEFAULT_COOLIFY_BASE_URL = 'http://127.0.0.1:8000'
         DEFAULT_COOLIFY_RESOURCE_UUID = 'elqs1vtmi6hw7afeevjj1vum'
@@ -46,10 +38,6 @@ pipeline {
                     env.EFFECTIVE_IMAGE_TAG = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : env.GIT_SHORT_SHA
                     env.EFFECTIVE_USE_SAME_ORIGIN_API = params.USE_SAME_ORIGIN_API == null ? 'true' : params.USE_SAME_ORIGIN_API.toString()
                     env.EFFECTIVE_PUBLIC_API_BASE_URL = env.EFFECTIVE_USE_SAME_ORIGIN_API == 'true' ? '' : (params.PUBLIC_API_BASE_URL?.trim() ?: env.DEFAULT_PUBLIC_API_BASE_URL)
-                    env.EFFECTIVE_CAP_ENABLED = params.CAP_ENABLED == null ? env.DEFAULT_CAP_ENABLED : params.CAP_ENABLED.toString()
-                    env.EFFECTIVE_CAP_BASE_URL = params.CAP_BASE_URL?.trim() ?: env.DEFAULT_CAP_BASE_URL
-                    env.EFFECTIVE_CAP_SITE_KEY = params.CAP_SITE_KEY?.trim() ?: env.DEFAULT_CAP_SITE_KEY
-                    env.EFFECTIVE_CAP_REQUIRED_ON_LOGIN = params.CAP_REQUIRED_ON_LOGIN == null ? env.DEFAULT_CAP_REQUIRED_ON_LOGIN : params.CAP_REQUIRED_ON_LOGIN.toString()
                     env.EFFECTIVE_GHCR_OWNER_REPO = params.GHCR_OWNER_REPO?.trim() ?: env.DEFAULT_GHCR_OWNER_REPO
                     env.EFFECTIVE_PUSH_IMAGES = params.PUSH_IMAGES == null ? 'true' : params.PUSH_IMAGES.toString()
                     env.EFFECTIVE_DEPLOY_TO_COOLIFY = params.DEPLOY_TO_COOLIFY == null ? 'true' : params.DEPLOY_TO_COOLIFY.toString()
@@ -96,17 +84,8 @@ pipeline {
                     sh 'npm run lint'
                     sh 'npm run test'
                     sh '''
-                        if [ "${EFFECTIVE_CAP_ENABLED}" = "true" ] && [ -z "${EFFECTIVE_CAP_SITE_KEY}" ]; then
-                          echo "CAP_SITE_KEY is required when CAP_ENABLED=true"
-                          exit 1
-                        fi
-
                         VITE_API_BASE_URL="${EFFECTIVE_PUBLIC_API_BASE_URL}" \
                         VITE_USE_SAME_ORIGIN_API="${EFFECTIVE_USE_SAME_ORIGIN_API}" \
-                        VITE_CAP_ENABLED="${EFFECTIVE_CAP_ENABLED}" \
-                        VITE_CAP_BASE_URL="${EFFECTIVE_CAP_BASE_URL}" \
-                        VITE_CAP_SITE_KEY="${EFFECTIVE_CAP_SITE_KEY}" \
-                        VITE_CAP_REQUIRED_ON_LOGIN="${EFFECTIVE_CAP_REQUIRED_ON_LOGIN}" \
                         npm run build
                     '''
                 }
@@ -117,18 +96,9 @@ pipeline {
             steps {
                 sh 'docker build -t "${BACKEND_LOCAL_IMAGE}" .'
                 sh '''
-                    if [ "${EFFECTIVE_CAP_ENABLED}" = "true" ] && [ -z "${EFFECTIVE_CAP_SITE_KEY}" ]; then
-                      echo "CAP_SITE_KEY is required when CAP_ENABLED=true"
-                      exit 1
-                    fi
-
                     docker build \
                       --build-arg VITE_API_BASE_URL="${EFFECTIVE_PUBLIC_API_BASE_URL}" \
                       --build-arg VITE_USE_SAME_ORIGIN_API="${EFFECTIVE_USE_SAME_ORIGIN_API}" \
-                      --build-arg VITE_CAP_ENABLED="${EFFECTIVE_CAP_ENABLED}" \
-                      --build-arg VITE_CAP_BASE_URL="${EFFECTIVE_CAP_BASE_URL}" \
-                      --build-arg VITE_CAP_SITE_KEY="${EFFECTIVE_CAP_SITE_KEY}" \
-                      --build-arg VITE_CAP_REQUIRED_ON_LOGIN="${EFFECTIVE_CAP_REQUIRED_ON_LOGIN}" \
                       -t "${FRONTEND_LOCAL_IMAGE}" \
                       ./mygram-frontend
                 '''
@@ -154,11 +124,7 @@ pipeline {
                     CORS_ALLOWED_ORIGINS=https://mygram.example.com,https://docs.mygram.example.com \
                     PUBLIC_OPENAPI_ENABLED=true \
                     SWAGGER_UI_MODE=public \
-                    CAP_ENABLED=false \
-                    CAP_BASE_URL=https://cap.fgdev.tech \
-                    CAP_SITE_KEY=jenkins-site-key \
-                    CAP_SECRET_KEY=jenkins-secret-key \
-                    CAP_REQUIRED_ON_LOGIN=true \
+                    REDIS_ENABLED=false \
                     S3_ENDPOINT=https://s3.fgdev.tech \
                     S3_REGION=garage \
                     S3_BUCKET=fgdev-media \
@@ -172,7 +138,6 @@ pipeline {
                     DB_PASSWORD=admin \
                     CORS_ALLOWED_ORIGINS=http://localhost:3000 \
                     PUBLIC_API_BASE_URL=http://localhost:8080 \
-                    VITE_CAP_ENABLED=false \
                     S3_ENDPOINT="" \
                     S3_BUCKET="" \
                     S3_ACCESS_KEY_ID="" \

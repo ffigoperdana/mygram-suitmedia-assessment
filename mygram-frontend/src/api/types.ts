@@ -29,13 +29,11 @@ export type RegisterPayload = {
   email: string;
   password: string;
   age: number;
-  captcha_token?: string;
 };
 
 export type LoginPayload = {
   email: string;
   password: string;
-  captcha_token?: string;
 };
 
 export type LoginResponse = {

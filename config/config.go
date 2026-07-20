@@ -16,14 +16,17 @@ type Config struct {
 	DBName                   string
 	DBPort                   string
 	DBSSLMode                string
+	RedisEnabled             bool
+	RedisAddr                string
+	RedisPassword            string
+	RedisDB                  int
+	RedisCacheTTLSeconds     int
+	RateLimitRequests        int
+	AuthRateLimitRequests    int
+	RateLimitWindowSeconds   int
 	JWTSecret                string
 	JWTExpirationHours       int
 	CORSAllowedOrigins       []string
-	CapEnabled               bool
-	CapBaseURL               string
-	CapSiteKey               string
-	CapSecretKey             string
-	CapRequiredOnLogin       bool
 	PublicOpenAPI            bool
 	SwaggerUIMode            string
 	S3Endpoint               string
@@ -61,14 +64,17 @@ func Load() Config {
 		DBName:                   env("DB_NAME", "finalproject"),
 		DBPort:                   env("DB_PORT", "5432"),
 		DBSSLMode:                env("DB_SSLMODE", "disable"),
+		RedisEnabled:             envBool("REDIS_ENABLED", false),
+		RedisAddr:                env("REDIS_ADDR", ""),
+		RedisPassword:            env("REDIS_PASSWORD", ""),
+		RedisDB:                  envIntAllowZero("REDIS_DB", 0),
+		RedisCacheTTLSeconds:     envInt("REDIS_CACHE_TTL_SECONDS", 60),
+		RateLimitRequests:        envInt("RATE_LIMIT_REQUESTS", 120),
+		AuthRateLimitRequests:    envInt("AUTH_RATE_LIMIT_REQUESTS", 10),
+		RateLimitWindowSeconds:   envInt("RATE_LIMIT_WINDOW_SECONDS", 60),
 		JWTSecret:                env("JWT_SECRET", ""),
 		JWTExpirationHours:       envInt("JWT_EXPIRATION_HOURS", 24),
 		CORSAllowedOrigins:       envCSV("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"),
-		CapEnabled:               envBool("CAP_ENABLED", false),
-		CapBaseURL:               strings.TrimRight(env("CAP_BASE_URL", ""), "/"),
-		CapSiteKey:               env("CAP_SITE_KEY", ""),
-		CapSecretKey:             env("CAP_SECRET_KEY", ""),
-		CapRequiredOnLogin:       envBool("CAP_REQUIRED_ON_LOGIN", true),
 		PublicOpenAPI:            envBool("PUBLIC_OPENAPI_ENABLED", true),
 		SwaggerUIMode:            swaggerUIMode(ginMode),
 		S3Endpoint:               strings.TrimRight(env("S3_ENDPOINT", ""), "/"),
@@ -166,6 +172,20 @@ func envInt(key string, fallback int) int {
 
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed <= 0 {
+		return fallback
+	}
+
+	return parsed
+}
+
+func envIntAllowZero(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
 		return fallback
 	}
 

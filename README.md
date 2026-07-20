@@ -4,9 +4,47 @@ MyGram is a Go/Gin social media backend for users, photos, comments, and social 
 
 - Backend: Go, Gin, GORM, PostgreSQL
 - Frontend: React, Vite, TypeScript, Tailwind
-- Deployment: Docker Compose on Coolify, with GHCR images and Jenkins pipeline support
+- Primary deployment: Google Cloud Run, Cloud SQL for PostgreSQL, Memorystore for Redis, and Garage S3-compatible storage
+- Alternative deployment assets: Docker Compose, Coolify metadata, and Jenkins pipeline support
 
 See [TASK.md](TASK.md) for the phased implementation handoff and [DEPLOYMENT.md](DEPLOYMENT.md) for the Coolify/Jenkins deployment plan.
+
+## Infrastructure overview
+
+```mermaid
+flowchart LR
+    REVIEWER[Reviewer / browser] -->|HTTPS| WEB[Cloud Run: mygram-web]
+    WEB -->|HTTPS API| API[Cloud Run: mygram-api]
+
+    API -->|authenticated Unix socket| SQL[(Cloud SQL PostgreSQL\nmygram database)]
+    API -->|Direct VPC egress| REDIS[(Memorystore Redis\ncache + rate limits)]
+    API -->|S3-compatible API| GARAGE[(Garage S3\nphoto objects)]
+    SECRETS[Secret Manager] -->|runtime secret references| API
+
+    GITHUB[GitHub Actions\nWIF, no JSON key] --> REGISTRY[Artifact Registry\ncommit-SHA images]
+    REGISTRY --> API
+    REGISTRY --> WEB
+```
+
+The PostgreSQL instance is not embedded in Cloud Run. `mygram-api` is a stateless container that connects to the separate Cloud SQL instance `mygram-postgres`, database `mygram`, as database user `mygramapp`. PostgreSQL is the primary source of truth for users, password hashes, roles/statuses used by RBAC, photos, comments, social links, and push subscriptions. Redis is only a cache and distributed rate-limit store. Photo binaries remain in Garage; their metadata and URLs remain in PostgreSQL.
+
+### Assessment checklist
+
+- [x] **Container as a Service (CaaS):** backend and frontend run as separate Google Cloud Run services and deploy from immutable commit-SHA images in Artifact Registry.
+- [x] **PostgreSQL database:** Cloud SQL for PostgreSQL is connected through Cloud Run's authenticated Unix socket; CI uses only an ephemeral PostgreSQL container.
+- [x] **Redis implementation:** Memorystore integration, cache-aside, invalidation, fail-open fallback, Direct VPC egress, and Redis-backed integration tests are implemented. Production is considered active only after bootstrap and a green CD readiness check reports `redis: connected`.
+- [x] **Object Storage:** Garage remains the S3-compatible object store. It has not been replaced by Google Cloud Storage.
+- [x] **Cost-optimized assessment design:** Cloud Run can scale to zero when idle, images use BuildKit caching, and Redis uses the requested Basic Tier 1 GB. Actual cost still depends on Cloud SQL sizing, traffic, egress, and Garage hosting.
+- [ ] **End-to-end high availability:** only partially satisfied. Cloud Run is managed, but Memorystore Basic Tier is a standalone cache; Cloud SQL HA and Garage replication have not been proven by this repository. Production should use Memorystore Standard Tier HA, Cloud SQL regional HA with backups/PITR, and verified Garage replication.
+- [x] **Application-tier autoscaling:** Cloud Run automatically scales API and frontend instances. PostgreSQL and Basic Tier Redis are provisioned-capacity services and must be sized and monitored separately.
+- [x] **Security baseline:** HTTPS, WIF without JSON keys, least-privilege workflow permissions, Secret Manager references, private Redis networking, Cloud SQL authenticated connectivity, password hashing, JWT authentication, RBAC, CORS, and security headers are present. Redis failure is deliberately fail-open, so rate limiting is resilience-oriented rather than a hard security boundary.
+- [ ] **1,500 concurrent users verified:** not yet proven. The normal target of approximately 100 CCU and peak target of 1,500 CCU require a repeatable load test against the deployed stack plus Cloud Run, Cloud SQL, Redis, latency, error-rate, and connection-pool evidence. Autoscaling configuration alone is not a load-test result.
+
+### Reviewer accounts and authentication
+
+There are no hard-coded or default seeded credentials in the repository or Cloud Run workflow. Public registration creates a regular `user` role. Login uses **email and password**; after successful login the API issues a signed JWT which clients send as `Authorization: Bearer <jwt>`. JWT remains stateless and is not stored in Redis.
+
+An administrator can be provisioned once through the documented `BOOTSTRAP_ADMIN_*` flow backed by Secret Manager. Do not publish the real reviewer password in this public README: that would contradict the assessment's no-secret requirement and allow automated credential scraping. Share the completed credential handoff privately and give reviewers this public [reviewer flow and provisioning guide](docs/REVIEWER_GUIDE.md).
 
 ## Continuous Integration
 
